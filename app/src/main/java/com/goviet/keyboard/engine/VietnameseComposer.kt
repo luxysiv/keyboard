@@ -111,77 +111,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     }
 
 
-    // ============================================================
-    // UNDO LOG — pre-allocated, zero-allocation per keystroke
-    // ============================================================
-    /**
-     * A single undo entry: captures all SyllableState field references + raw length
-     * BEFORE a keystroke is applied. Since Kotlin Strings are immutable, storing
-     * references is sufficient — no copying needed.
-     */
-    class UndoEntry(
-        var onset: String = "",
-        var nucleus: String = "",
-        var coda: String = "",
-        var tone: Tone = Tone.NONE,
-        var lastToggle: LastToggle? = null,
-        var lastUntoggledToneKey: Char? = null,
-        var rawSuffix: String = "",
-        var rawLength: Int = 0
-    ) {
-        fun captureFrom(state: SyllableState, rawLen: Int) {
-            onset = state.onset
-            nucleus = state.nucleus
-            coda = state.coda
-            tone = state.tone
-            lastToggle = state.lastToggle
-            lastUntoggledToneKey = state.lastUntoggledToneKey
-            rawSuffix = state.rawSuffix
-            rawLength = rawLen
-        }
-
-        fun restoreTo(state: SyllableState) {
-            state.onset = onset
-            state.nucleus = nucleus
-            state.coda = coda
-            state.tone = tone
-            state.lastToggle = lastToggle
-            state.lastUntoggledToneKey = lastUntoggledToneKey
-            state.rawSuffix = rawSuffix
-        }
-    }
-
-    /**
-     * Pre-allocated undo log (stack of [UndoEntry]). No allocation per keystroke.
-     * Thread-confined: IME thread only.
-     */
-    class UndoLog(private val maxDepth: Int = 30) {
-        private val entries = Array(maxDepth) { UndoEntry() }
-        private var sp = 0
-
-        /** Capture current state BEFORE applying a keystroke. */
-        fun record(state: SyllableState, rawLength: Int) {
-            if (sp < maxDepth) {
-                entries[sp].captureFrom(state, rawLength)
-                sp++
-            }
-        }
-
-        /**
-         * Restore the state to the snapshot BEFORE the last keystroke.
-         * Returns the raw length at that snapshot, or -1 if the log is empty.
-         */
-        fun undo(state: SyllableState): Int {
-            if (sp <= 0) return -1
-            sp--
-            entries[sp].restoreTo(state)
-            return entries[sp].rawLength
-        }
-
-        fun clear() { sp = 0 }
-        fun isEmpty(): Boolean = sp == 0
-    }
-
     /**
      * Single source of truth: pure re-derivation from the raw keystroke buffer.
      * The engine keeps no persistent syllable state — every call replays the raw
@@ -209,8 +138,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     /**
      * Feed a single keystroke into [state] (incremental, no replay).
      * Returns true if the key was handled by the Vietnamese spelling kernel.
-     * Callers should call [undoLog].record(state, rawLength) BEFORE this
-     * to capture the pre-keystroke snapshot.
+     * Backspace never needs a snapshot: it mutates the caller's raw buffer and
+     * re-derives the state with [replayRawToState].
      */
     fun feedKey(state: SyllableState, key: Char): Boolean {
         return applyKey(state, key, isStaticReDerive = false)
@@ -218,8 +147,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     /**
      * Replay [raw] keystrokes into [state] from scratch. Used when adopting
-     * a committed word (e.g. after space+backspace) to rebuild state from
-     * the canonical raw encoding.
+     * a committed word (e.g. after space+backspace) and when re-deriving the
+     * live state after a composing backspace/delete edit, so the display and
+     * the next keystrokes always agree with the raw buffer.
      */
     fun replayRawToState(raw: CharSequence, state: SyllableState) {
         state.reset()

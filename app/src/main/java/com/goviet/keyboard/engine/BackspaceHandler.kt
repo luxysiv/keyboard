@@ -220,96 +220,93 @@ class BackspaceHandler(
     // ============================================================
 
     /**
-     * Backspace while composing — structural undo stack approach.
-     * Restores the SyllableState to the snapshot before the last keystroke,
-     * and truncates composingRaw to the matching raw length.
-     * Zero-allocation: no grapheme detection, no deriveRaw, no prefix scanning.
+     * Backspace while composing — raw-buffer mutation + full replay.
+     *
+     * The preedit is a pure function of [composingRaw]: instead of keeping
+     * per-keystroke state snapshots (the old C++-derived undo stack), we delete
+     * exactly one raw keystroke before the caret and re-derive both the display
+     * and the live state from the remaining buffer through the same replay path
+     * used everywhere else. Display, caret and later keystrokes therefore always
+     * agree with the raw buffer — the engine stays the single source of truth.
      */
     private fun performComposingBackspace(ic: InputConnection) {
         val raw = controller.composingRaw
+        if (raw.isEmpty()) {
+            deleteLastGraphemeOrChar(ic)
+            return
+        }
+
+        val cursor = controller.composingCursorIndex
+        if (cursor <= 0) {
+            // Caret is at the very beginning of the preedit: the backspace must
+            // hit committed text while the preedit itself stays untouched.
+            deleteCommittedGraphemeBeforePreedit(ic)
+            return
+        }
+
+        // Drop exactly one raw keystroke immediately before the caret.
+        raw.deleteCharAt(cursor - 1)
+        controller.composingCursorIndex = cursor - 1
+
         if (raw.isEmpty()) {
             resetPreeditToEmpty(ic)
             return
         }
 
-        if (controller.composingCursorIndex < raw.length) {
-            if (controller.composingCursorIndex == 0) {
-                deleteLastGraphemeOrChar(ic)
-                return
-            }
-            // Mid-preedit caret: drop the keystroke before the caret.
-            // Undo both state and raw to the pre-keystroke snapshot, then
-            // re-apply everything from the beginning of the remaining raw.
-            val targetLen = controller.composingCursorIndex - 1
-            if (targetLen <= 0) {
-                resetPreeditToEmpty(ic)
-                return
-            }
-            val remainingRaw = raw.substring(0, targetLen)
-            raw.setLength(0)
-            raw.append(remainingRaw)
-            controller.composingCursorIndex = targetLen
-            // Replay into state from the remaining raw
-            controller.inputEngine.replayRawToState(remainingRaw, controller.composingState)
-            controller.composingUndoLog.clear()
-            // Re-record each keystroke into the undo log for future backspaces
-            for (i in 0 until targetLen) {
-                controller.composingUndoLog.record(controller.composingState, i)
-                // We can't re-run feedKey here without knowing which chars were fed.
-                // Instead, just re-play from scratch — only happens on mid-caret backspace (rare).
-            }
-            // For mid-caret, fall back to raw-based recompile
-            recompilePreedit(ic, midPreedit = true)
-            return
-        }
-
-        // Caret at the end: undo the last keystroke via the undo log.
-        val rawLen = controller.composingUndoLog.undo(controller.composingState)
-        if (rawLen < 0) {
-            // Undo log empty — clear everything
-            resetPreeditToEmpty(ic)
-            return
-        }
-        raw.setLength(rawLen)
-        controller.composingCursorIndex = rawLen
-
-        if (controller.composingState.isEmpty()) {
-            resetPreeditToEmpty(ic)
-            return
-        }
-
-        // Display from live state — no replay needed.
-        val display = if (controller.isVietnamese) {
-            controller.composingState.toDisplayString(controller.inputEngine.options.oldTonePlacement)
-        } else {
-            controller.compileRawDisplay()
-        }
-        replaceComposingText(ic, display)
+        recomposePreedit(ic, midPreedit = controller.composingCursorIndex < raw.length)
     }
 
     private fun performComposingDeleteForward(ic: InputConnection) {
         val raw = controller.composingRaw
-        if (controller.composingCursorIndex >= raw.length) {
+        val cursor = controller.composingCursorIndex
+        if (cursor >= raw.length) {
             deleteNextGraphemeOrChar(ic)
             return
         }
-        raw.deleteCharAt(controller.composingCursorIndex)
-        recompilePreedit(ic, midPreedit = true)
-    }
-
-    /**
-     * Recompile the preedit after a raw mutation and keep the caret at the display
-     * offset of the (possibly mid-preedit) raw caret.
-     */
-    private fun recompilePreedit(ic: InputConnection, midPreedit: Boolean) {
-        if (controller.composingRaw.isEmpty()) {
+        raw.deleteCharAt(cursor)
+        if (raw.isEmpty()) {
             resetPreeditToEmpty(ic)
             return
         }
-        val display = controller.compileRawDisplay()
+        recomposePreedit(ic, midPreedit = true)
+    }
+
+    /**
+     * Re-derive the preedit after a raw mutation and keep the caret at the display
+     * offset of the (possibly mid-preedit) raw caret.
+     * The live syllable state is rebuilt from the raw buffer so subsequent
+     * keystrokes continue from exactly the same state as the display.
+     */
+    private fun recomposePreedit(ic: InputConnection, midPreedit: Boolean) {
+        val raw = controller.composingRaw
+        if (raw.isEmpty()) {
+            resetPreeditToEmpty(ic)
+            return
+        }
+        val display: String
+        if (controller.isVietnamese) {
+            controller.inputEngine.replayRawToState(raw, controller.composingState)
+            display = controller.composingState.toDisplayString(controller.inputEngine.options.oldTonePlacement)
+        } else {
+            // Literal preedit: passthrough text, never run through the Telex kernel.
+            controller.composingState.reset()
+            controller.composingState.rawSuffix = raw.toString()
+            display = raw.toString()
+        }
         replaceComposingText(ic, display)
         if (midPreedit && controller.composingStartInEditor >= 0) {
             controller.moveCursorTo(ic, controller.composingStartInEditor + controller.displayCursorIndex())
+        }
+    }
+
+    /** Backspace on committed text immediately before the preedit, keeping it intact. */
+    private fun deleteCommittedGraphemeBeforePreedit(ic: InputConnection) {
+        val beforeText = ic.getTextBeforeCursor(128, 0)?.toString() ?: ""
+        var charsToDelete = GraphemeEditor.getBackwardGraphemeLength(beforeText)
+        if (charsToDelete <= 0) charsToDelete = 1
+        deleteBefore(ic, charsToDelete)
+        if (controller.composingStartInEditor >= charsToDelete) {
+            controller.composingStartInEditor -= charsToDelete
         }
     }
 

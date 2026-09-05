@@ -67,8 +67,6 @@ class ImeInputConnectionController(
 
     /** Live syllable state — source of truth for display. */
     val composingState = VietnameseComposer.SyllableState()
-    /** Pre-allocated undo log for zero-allocation backspace. */
-    val composingUndoLog = VietnameseComposer.UndoLog()
 
     // Expected cursor positions set by our own setSelection calls, each stamped with its
     // creation time. WebViews can emit stale or duplicated onUpdateSelection callbacks after
@@ -274,7 +272,6 @@ class ImeInputConnectionController(
     fun clearState() {
         composingRaw.clear()
         composingState.reset()
-        composingUndoLog.clear()
         lastSetComposingText = null
         activeComposingShiftState = 0
         isVietnamese = true
@@ -432,7 +429,6 @@ class ImeInputConnectionController(
             composingCursorIndex = canonicalRaw.length
             isVietnamese = true
             inputEngine.replayRawToState(canonicalRaw, composingState)
-            composingUndoLog.clear()
             lastSetComposingText = wordText
             ic.setComposingRegion(wordAtCursor.startInEditor, wordAtCursor.endInEditor)
             userMovedCursor = false
@@ -455,7 +451,6 @@ class ImeInputConnectionController(
             composingCursorIndex = wordText.length
             isVietnamese = true
             inputEngine.replayRawToState(wordText, composingState)
-            composingUndoLog.clear()
             lastSetComposingText = wordText
             ic.setComposingRegion(wordAtCursor.startInEditor, wordAtCursor.endInEditor)
             userMovedCursor = false
@@ -469,7 +464,6 @@ class ImeInputConnectionController(
             isVietnamese = false
             composingState.reset()
             composingState.rawSuffix = wordText
-            composingUndoLog.clear()
             lastSetComposingText = wordText
 
             ic.setComposingRegion(wordAtCursor.startInEditor, wordAtCursor.endInEditor)
@@ -509,7 +503,6 @@ class ImeInputConnectionController(
             clearExpectedCursors()
             composingRaw.clear()
             composingState.reset()
-            composingUndoLog.clear()
             activeComposingShiftState = 0
             lastSetComposingText = null
             expectedCursorStart = -1
@@ -688,8 +681,6 @@ class ImeInputConnectionController(
                             activeComposingShiftState = service.shiftController.value
                         }
                         val lastLen = lastSetComposingText?.length ?: 0
-                        // Record undo snapshot BEFORE modifying state.
-                        composingUndoLog.record(composingState, composingRaw.length)
                         composingRaw.insert(composingCursorIndex, actualKey)
                         composingCursorIndex += actualKey.length
                         lastCommittedChar = actualKey.lastOrNull()
