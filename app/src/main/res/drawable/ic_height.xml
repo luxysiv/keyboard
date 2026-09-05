@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Keyboard frame floating at top -->
+    <path
+        android:pathData="M 5 5 h 14 c 1.1 0 2 .9 2 2 v 5 c 0 1.1 -.9 2 -2 2 H 5 c -1.1 0 -2 -.9 -2 -2 V 7 c 0 -1.1 .9 -2 2 -2 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Spacebar key inside keyboard -->
+    <path
+        android:pathData="M 8.5 9.5 h 7"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round" />
+    <!-- Bottom screen edge baseline -->
+    <path
+        android:pathData="M 3 20 h 18"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round" />
+    <!-- Elevation arrow from bottom edge to keyboard base -->
+    <path
+        android:pathData="M 12 20 V 15"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M 9.5 17.5 L 12 15 L 14.5 17.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

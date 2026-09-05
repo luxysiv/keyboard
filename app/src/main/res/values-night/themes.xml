@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme for Dark Mode. -->
+    <style name="Theme.GoViet" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Primary brand colors - Sleek cool gray in dark mode -->
+        <item name="colorPrimary">@color/brand_primary_dark</item>
+        <item name="colorPrimaryDark">@color/brand_primary_dark</item>
+        <item name="colorAccent">@color/brand_primary_dark</item>
+        <item name="colorOnPrimary">@color/brand_primary_container_dark</item>
+
+        <!-- Custom surface, background, and text colors -->
+        <item name="colorSurface">@color/brand_surface_dark</item>
+        <item name="android:colorBackground">@color/brand_background_dark</item>
+        <item name="colorOnSurface">@color/brand_text_dark</item>
+        <item name="colorOnSurfaceVariant">@color/brand_secondary_text_dark</item>
+        <item name="colorSurfaceVariant">@color/brand_card_dark</item>
+    </style>
+
+    <!-- Keep Theme.MyApplication inheriting from Theme.GoViet for backward compatibility -->
+    <style name="Theme.MyApplication" parent="Theme.GoViet" />
+</resources>

@@ -1,0 +1,111 @@
+<resources>
+    <!-- App & Subtypes -->
+    <string name="app_name">Gõ Việt</string>
+    <string name="subtype_vi">Tiếng Việt</string>
+    <string name="subtype_en">English</string>
+    <string name="subtype_vi_label">Tiếng Việt</string>
+    <string name="subtype_en_label">English (US)</string>
+
+    <!-- Main Activity / Home / About / Privacy Settings -->
+    <string name="app_title">Gõ Việt Keyboard</string>
+    <string name="cat_global">Global Settings</string>
+    <string name="dark_theme">Dark Theme</string>
+    <string name="dark_theme_desc">Force dark theme mode for the settings application</string>
+    <string name="theme_mode">Theme Mode</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_system">System default</string>
+    <string name="theme_dynamic">Dynamic Color (Material You)</string>
+    <string name="bottom_padding">Bottom Padding Adjustment</string>
+    <string name="bottom_padding_desc">Raise keyboard to avoid mistouching hidden navigation bar or Honor system keys</string>
+    <string name="bottom_padding_default">Default</string>
+    <string name="bottom_padding_medium">Medium (+12dp)</string>
+    <string name="bottom_padding_high">High (+24dp)</string>
+    <string name="bottom_padding_very_high">Very High (+36dp)</string>
+    <string name="lang_title">Language</string>
+    <string name="lang_dialog_title">Select Language</string>
+    <string name="btn_close">Close</string>
+    <string name="cat_macro">Shortcuts</string>
+    <string name="cat_info">Information</string>
+    <string name="about_title">About</string>
+    <string name="about_desc">App version &amp; development info</string>
+    <string name="privacy_title">Privacy Policy</string>
+    <string name="privacy_desc">Offline input data security &amp; privacy commitment</string>
+    <string name="about_app_name">App Name</string>
+    <string name="about_version">Version</string>
+    <string name="about_keyboards">Supported Keyboards</string>
+    <string name="about_keyboards_val">Telex Vietnamese</string>
+    <string name="about_dev">Development</string>
+    <string name="about_dev_val">Copyright © 2026 GoViet. All rights reserved.</string>
+    <string name="privacy_comm">GoViet Privacy Commitment</string>
+    <string name="privacy_p1">1. GoViet strictly does not collect, store, or transmit any of your personal details, passwords, accounts, credit card numbers, or input content over the internet.</string>
+    <string name="privacy_p2">2. All operational data is processed locally and stored completely offline, securely on your device\'s memory.</string>
+    <string name="privacy_p3">3. The application does not require any internet access or unnecessary sensitive permissions to operate, guaranteeing complete peace of mind.</string>
+
+    <!-- Macro Screen -->
+    <string name="macro_title">Shortcuts &amp; Macros</string>
+    <string name="macro_desc">Manage your shortcut phrases</string>
+    <string name="macro_add_button">Add Shortcut</string>
+    <string name="macro_add_title">Add New Shortcut</string>
+    <string name="macro_edit_title">Edit Shortcut</string>
+    <string name="macro_trigger_label">Shortcut (e.g. vn)</string>
+    <string name="macro_expansion_label">Expansion (e.g. Viet Nam)</string>
+    <string name="macro_empty_title">No Shortcuts Added</string>
+    <string name="macro_empty_desc">Add shortcut phrases for faster typing (e.g. vn ➔ Viet Nam).\nNote: Make sure to enable "SHORTCUTS" in keyboard settings.</string>
+
+    <!-- Traditional Keyboard Settings UI -->
+    <string name="pref_title">KEYBOARD SETTINGS</string>
+    <string name="pref_submenu_style">KEY STYLE</string>
+    <string name="pref_submenu_theme">KEYBOARD THEME</string>
+    <string name="pref_submenu_padding">BOTTOM PADDING</string>
+
+    <string name="pref_cat_style">KEY STYLE</string>
+    <string name="pref_cat_theme">THEME</string>
+    <string name="pref_cat_padding">PADDING</string>
+    <string name="pref_cat_macro">MACROS</string>
+    <string name="pref_cat_auto_capitalize">AUTO CAPITALIZE</string>
+
+    <string name="pref_feature_macro_title">SHORTCUT MACROS</string>
+    <string name="pref_feature_macro_desc">Expand shortcut words into full configured phrases</string>
+    <string name="pref_feature_auto_capitalize_title">AUTO CAPITALIZE SENTENCES</string>
+    <string name="pref_feature_auto_capitalize_desc">Capitalize first letter after period, question, exclamation mark or newline</string>
+
+    <string name="pref_style_border">BORDERED</string>
+    <string name="pref_style_flat">FLAT</string>
+    <string name="pref_style_none">NO BORDER</string>
+    <string name="pref_style_border_sub">Bordered</string>
+    <string name="pref_style_flat_sub">Flat</string>
+    <string name="pref_style_none_sub">None</string>
+
+    <string name="pref_theme_system_cap">SYSTEM</string>
+    <string name="pref_theme_light_cap">LIGHT</string>
+    <string name="pref_theme_dark_cap">DARK</string>
+    <string name="pref_theme_dynamic_cap">DYNAMIC</string>
+    <string name="pref_theme_system_sub">System</string>
+    <string name="pref_theme_light_sub">Light</string>
+    <string name="pref_theme_dark_sub">Dark</string>
+    <string name="pref_theme_dynamic_sub">Dynamic</string>
+    <string name="pref_theme_default_sub">Default</string>
+
+    <string name="pref_padding_default_cap">DEFAULT</string>
+    <string name="pref_padding_medium_cap">MEDIUM</string>
+    <string name="pref_padding_high_cap">HIGH</string>
+    <string name="pref_padding_very_high_cap">VERY HIGH</string>
+    <string name="pref_padding_medium_sub">Medium</string>
+    <string name="pref_padding_high_sub">High</string>
+    <string name="pref_padding_very_high_sub">Very High</string>
+
+    <string name="pref_status_locked">Off (Locked)</string>
+    <string name="pref_status_on">On</string>
+    <string name="pref_status_off">Off</string>
+    <string name="pref_opt_on">ON</string>
+    <string name="pref_opt_off">OFF</string>
+    <string name="pref_other">Other</string>
+
+    <!-- Vietnamese Typing Settings -->
+    <string name="cat_typing_options">TYPING OPTIONS</string>
+    <string name="pref_direct_w_title">Direct \'w\' key typing</string>
+    <string name="pref_direct_w_desc">Type \'w\' as \'w\' instead of \'ư\' when standing alone or at start</string>
+    <string name="pref_old_tone_title">Traditional tone marks (oà, uý)</string>
+    <string name="pref_old_tone_desc">Place tone marks on initial vowels (e.g. hoà, hoè, thuỷ instead of hòa, hòe, thủy)</string>
+</resources>

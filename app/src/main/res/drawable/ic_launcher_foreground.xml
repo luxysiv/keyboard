@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 1. Sleek Flat Keyboard Chassis with high-contrast accent outline -->
+    <path
+        android:fillColor="#334155"
+        android:strokeColor="#475569"
+        android:strokeWidth="1.5"
+        android:pathData="M 28,32 H 80 C 82.8,32 85,34.2 85,37 V 69 C 85,71.8 82.8,74 80,74 H 28 C 25.2,74 23,71.8 23,69 V 37 C 23,34.2 25.2,32 28,32 Z" />
+
+    <!-- 2. Row 1: Outer Gray Keys -->
+    <!-- Top-Left Keycap -->
+    <path
+        android:fillColor="#475569"
+        android:pathData="M 30,36 H 36 C 37.1,36 38,36.9 38,38 V 46 C 38,47.1 37.1,48 36,48 H 30 C 28.9,48 28,47.1 28,46 V 38 C 28,36.9 28.9,36 30,36 Z" />
+
+    <!-- Top-Right Keycap -->
+    <path
+        android:fillColor="#475569"
+        android:pathData="M 72,36 H 78 C 79.1,36 80,36.9 80,38 V 46 C 80,47.1 79.1,48 78,48 H 72 C 70.9,48 70,47.1 70,46 V 38 C 70,36.9 70.9,36 72,36 Z" />
+
+    <!-- 3. Row 2: Outer-Lower Side Keys -->
+    <!-- Bottom-Left Shift/Symbol key -->
+    <path
+        android:fillColor="#475569"
+        android:pathData="M 30,52 H 34 C 35.1,52 36,52.9 36,54 V 62 C 36,63.1 35.1,64 34,64 H 30 C 28.9,64 28,63.1 28,62 V 54 C 28,52.9 28.9,52 30,52 Z" />
+
+    <!-- Bottom-Right Backspace/Enter Key -->
+    <path
+        android:fillColor="#475569"
+        android:pathData="M 74,52 H 78 C 79.1,52 80,52.9 80,54 V 62 C 80,63.1 79.1,64 78,64 H 74 C 72.9,64 72,63.1 72,62 V 54 C 72,52.9 72.9,52 74,52 Z" />
+
+    <!-- 4. Flat Highlighted Accent Spacebar (Cyan/Skyblue) -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M 42,58 H 66 C 67.1,58 68,58.9 68,60 V 66 C 68,67.1 67.1,68 66,68 H 42 C 40.9,68 40,67.1 40,66 V 60 C 40,58.9 40.9,58 42,58 Z" />
+
+    <!-- 5. Center Hero Key: Highly visible premium key with the main letter "V" representing GoViet -->
+    <path
+        android:fillColor="#F8FAFC"
+        android:pathData="M 45,36 H 63 C 64.7,36 66,37.3 66,39 V 51 C 66,52.7 64.7,54 63,54 H 45 C 43.3,54 42,52.7 42,51 V 39 C 42,37.3 43.3,36 45,36 Z" />
+
+    <!-- Bold Crimson letter "V" nested beautifully in the center of the key -->
+    <path
+        android:fillColor="#EF4444"
+        android:pathData="M 47.5,38 H 51.0 L 54.0,47.5 L 57.0,38 H 60.5 L 55.7,52.0 H 52.3 Z" />
+
+    <!-- 6. Floating Golden Vietnamese Star at top center, reflecting national keyboard layout identity -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M 54,22.0 L 55.4,25.1 L 58.8,25.1 L 56.1,27.0 L 57.2,30.3 L 54,28.2 L 50.8,30.3 L 51.9,27.0 L 49.2,25.1 L 52.6,25.1 Z" />
+
+</vector>

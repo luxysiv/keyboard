@@ -1,0 +1,111 @@
+<resources>
+    <!-- App & Subtypes -->
+    <string name="app_name">Bàn phím Gõ Việt</string>
+    <string name="subtype_vi">Tiếng Việt</string>
+    <string name="subtype_en">English</string>
+    <string name="subtype_vi_label">Tiếng Việt</string>
+    <string name="subtype_en_label">English (US)</string>
+
+    <!-- Main Activity / Home / About / Privacy Settings -->
+    <string name="app_title">Bàn phím Gõ Việt</string>
+    <string name="cat_global">Cài đặt toàn cục</string>
+    <string name="dark_theme">Giao diện tối</string>
+    <string name="dark_theme_desc">Buộc sử dụng chế độ tối cho ứng dụng cài đặt</string>
+    <string name="theme_mode">Giao diện</string>
+    <string name="theme_light">Sáng</string>
+    <string name="theme_dark">Tối</string>
+    <string name="theme_system">Theo hệ thống</string>
+    <string name="theme_dynamic">Màu động (Material You)</string>
+    <string name="bottom_padding">Khoảng cách cạnh dưới (Padding)</string>
+    <string name="bottom_padding_desc">Nâng cao bàn phím tránh chạm nhầm phím điều hướng ẩn hoặc phím chức năng Honor</string>
+    <string name="bottom_padding_default">Mặc định (Default)</string>
+    <string name="bottom_padding_medium">Trung bình (+12dp)</string>
+    <string name="bottom_padding_high">Cao (+24dp)</string>
+    <string name="bottom_padding_very_high">Rất cao (+36dp)</string>
+    <string name="lang_title">Ngôn ngữ</string>
+    <string name="lang_dialog_title">Chọn ngôn ngữ</string>
+    <string name="btn_close">Đóng</string>
+    <string name="cat_macro">Gõ tắt</string>
+    <string name="cat_info">Thông tin</string>
+    <string name="about_title">Giới thiệu</string>
+    <string name="about_desc">Phiên bản ứng dụng &amp; thông tin phát triển</string>
+    <string name="privacy_title">Chính sách bảo mật</string>
+    <string name="privacy_desc">Cam kết bảo mật thông tin nhập liệu ngoại tuyến</string>
+    <string name="about_app_name">Tên ứng dụng</string>
+    <string name="about_version">Phiên bản</string>
+    <string name="about_keyboards">Bàn phím hỗ trợ</string>
+    <string name="about_keyboards_val">Telex tiếng Việt</string>
+    <string name="about_dev">Phát triển</string>
+    <string name="about_dev_val">Bản quyền © 2026 Gõ Việt. Mọi quyền được bảo lưu.</string>
+    <string name="privacy_comm">Cam kết bảo mật của Gõ Việt</string>
+    <string name="privacy_p1">1. Gõ Việt tuyệt đối không thu thập, lưu trữ hay truyền tải bất kỳ thông tin cá nhân, mật khẩu, tài khoản, số thẻ tín dụng hay nội dung nhập liệu nào của bạn ra bên ngoài mạng internet.</string>
+    <string name="privacy_p2">2. Toàn bộ dữ liệu hoạt động đều được xử lý cục bộ và lưu trữ hoàn toàn ngoại tuyến, an toàn tuyệt đối trên bộ nhớ thiết bị của bạn.</string>
+    <string name="privacy_p3">3. Ứng dụng không yêu cầu bất kỳ quyền truy cập mạng hay quyền nhạy cảm không cần thiết nào để hoạt động, đảm bảo sự an tâm và bảo vệ tối đa cho người dùng.</string>
+
+    <!-- Macro Screen -->
+    <string name="macro_title">Từ viết tắt</string>
+    <string name="macro_desc">Quản lý các cụm gõ tắt của bạn</string>
+    <string name="macro_add_button">Thêm từ viết tắt</string>
+    <string name="macro_add_title">Thêm từ gõ tắt mới</string>
+    <string name="macro_edit_title">Chỉnh sửa từ gõ tắt</string>
+    <string name="macro_trigger_label">Gõ tắt (Ví dụ: vn)</string>
+    <string name="macro_expansion_label">Thành cụm từ (Ví dụ: Việt Nam)</string>
+    <string name="macro_empty_title">Chưa có từ viết tắt nào</string>
+    <string name="macro_empty_desc">Thêm các cụm từ gõ tắt để soạn thảo nhanh hơn (ví dụ: vn ➔ Việt Nam).\nLưu ý: Bạn nhớ bật tính năng \"GÕ TẮT\" trong cài đặt bàn phím.</string>
+
+    <!-- Traditional Keyboard Settings UI -->
+    <string name="pref_title">CÀI ĐẶT BÀN PHÍM</string>
+    <string name="pref_submenu_style">KIỂU DÁNG PHÍM</string>
+    <string name="pref_submenu_theme">GIAO DIỆN BÀN PHÍM</string>
+    <string name="pref_submenu_padding">KHOẢNG CÁCH CẠNH DƯỚI</string>
+
+    <string name="pref_cat_style">KIỂU PHÍM</string>
+    <string name="pref_cat_theme">GIAO DIỆN</string>
+    <string name="pref_cat_padding">CẠNH DƯỚI</string>
+    <string name="pref_cat_macro">GÕ TẮT</string>
+    <string name="pref_cat_auto_capitalize">VIẾT HOA ĐẦU CÂU</string>
+
+    <string name="pref_feature_macro_title">GÕ TẮT (MACRO)</string>
+    <string name="pref_feature_macro_desc">Mở rộng từ gõ tắt thành cụm từ đầy đủ đã được thiết lập</string>
+    <string name="pref_feature_auto_capitalize_title">VIẾT HOA ĐẦU CÂU</string>
+    <string name="pref_feature_auto_capitalize_desc">Tự động viết hoa chữ cái đầu câu sau dấu chấm, chấm hỏi, chấm than hoặc khi xuống dòng</string>
+
+    <string name="pref_style_border">NÚT VIỀN</string>
+    <string name="pref_style_flat">NÚT PHẲNG</string>
+    <string name="pref_style_none">KHÔNG NÚT</string>
+    <string name="pref_style_border_sub">Viền</string>
+    <string name="pref_style_flat_sub">Phẳng</string>
+    <string name="pref_style_none_sub">Không</string>
+
+    <string name="pref_theme_system_cap">HỆ THỐNG</string>
+    <string name="pref_theme_light_cap">SÁNG</string>
+    <string name="pref_theme_dark_cap">TỐI</string>
+    <string name="pref_theme_dynamic_cap">MÀU ĐỘNG</string>
+    <string name="pref_theme_system_sub">Hệ thống</string>
+    <string name="pref_theme_light_sub">Sáng</string>
+    <string name="pref_theme_dark_sub">Tối</string>
+    <string name="pref_theme_dynamic_sub">Màu động</string>
+    <string name="pref_theme_default_sub">Mặc định</string>
+
+    <string name="pref_padding_default_cap">MẶC ĐỊNH</string>
+    <string name="pref_padding_medium_cap">TRUNG BÌNH</string>
+    <string name="pref_padding_high_cap">CAO</string>
+    <string name="pref_padding_very_high_cap">RẤT CAO</string>
+    <string name="pref_padding_medium_sub">T.Bình</string>
+    <string name="pref_padding_high_sub">Cao</string>
+    <string name="pref_padding_very_high_sub">Rất cao</string>
+
+    <string name="pref_status_locked">Tắt (Khóa)</string>
+    <string name="pref_status_on">Đang Bật</string>
+    <string name="pref_status_off">Tắt</string>
+    <string name="pref_opt_on">BẬT</string>
+    <string name="pref_opt_off">TẮT</string>
+    <string name="pref_other">Khác</string>
+
+    <!-- Vietnamese Typing Settings -->
+    <string name="cat_typing_options">TÙY CHỌN BỘ GÕ</string>
+    <string name="pref_direct_w_title">Gõ trực tiếp phím w</string>
+    <string name="pref_direct_w_desc">Gõ w ra w thay vì chuyển thành ư khi đứng đầu hoặc đứng một mình</string>
+    <string name="pref_old_tone_title">Đặt dấu kiểu cũ (oà, uý)</string>
+    <string name="pref_old_tone_desc">Đặt dấu thanh ở âm đệm (ví dụ: hoà, hoè, thuỷ thay vì hòa, hòe, thủy)</string>
+</resources>

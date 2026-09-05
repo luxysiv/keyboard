@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Letter 'o' -->
+    <path
+        android:pathData="M 6.5 11.5 a 3 3 0 1 1 0 6 a 3 3 0 1 1 0 -6 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Letter 'a' (circle + stem) -->
+    <path
+        android:pathData="M 16.5 11.5 a 3 3 0 1 0 0 6 a 3 3 0 1 0 0 -6 Z M 19.5 11.5 v 6"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Tone shift arrow from 'o' to 'a' -->
+    <path
+        android:pathData="M 5.5 7.5 C 8 4.5 15 4.5 17.5 7.5"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 14.5 6.5 l 3 1 -1 3"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Tone accent mark '\' on 'a' -->
+    <path
+        android:pathData="M 16.5 3.5 l 2.5 2"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.40"
+        android:strokeLineCap="round" />
+</vector>
