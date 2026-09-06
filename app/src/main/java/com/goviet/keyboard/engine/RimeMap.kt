@@ -1,18 +1,21 @@
 package com.goviet.keyboard.engine
 
 /**
- * RimeMap — zero-GC primitive flat-map for Vietnamese rimes.
+ * RimeMap — zero-GC primitive hash table for Vietnamese rimes.
  *
- * Sorted LongArray + binary search.  No HashMap, no String allocation,
- * no Long/Int boxing on the hot path.  Designed for low-end Unisoc / A53.
+ * Open-addressing hash table (linear probing) over primitive LongArray keys —
+ * O(1) average lookup (1 probe @ load 0.5) vs binary search O(log n).
+ * Cache-friendly: keys table ~8KB fits Snapdragon L1 (32KB+).  No HashMap,
+ * no String allocation, no Long/Int boxing on the hot path.
  */
 object RimeMap {
 
     private const val FNV_OFF = -0x342d6e84b540832bL
     private const val FNV_MUL = 0x100000001b3L
 
-    private var _size = 0
-    private lateinit var _keys: LongArray
+    private var _mask = 0          // table_size - 1 (power of two)
+    private var _shift = 0         // 64 - tableBits (top-bits indexing)
+    private lateinit var _tableKeys: LongArray
     private lateinit var _tnNew: ShortArray
     private lateinit var _tnOld: ShortArray
     private lateinit var _stop: ByteArray
@@ -137,14 +140,19 @@ object RimeMap {
     @JvmStatic
     fun toneNewAt(idx: Int): Int = _tnNew[idx].toInt()
 
+    /**
+     * O(1) average lookup via linear probing.  Top-bits indexing from FNV-1a
+     * hash distributes uniformly.  Empty sentinel is 0L (hash is never 0
+     * because all hash functions apply `or 1L`).
+     */
     private fun find(hash: Long): Int {
-        var lo = 0; var hi = _size - 1
-        while (lo <= hi) {
-            val mid = (lo + hi) / 2
-            val v = _keys[mid]
-            when { hash < v -> hi = mid - 1; hash > v -> lo = mid + 1; else -> return mid }
+        var i = (hash ushr _shift).toInt() and _mask
+        while (true) {
+            val k = _tableKeys[i]
+            if (k == hash) return i
+            if (k == 0L) return -1
+            i = (i + 1) and _mask
         }
-        return -1
     }
 
     // ── Builder (init only — runs once, allocation OK) ────────────
@@ -211,19 +219,30 @@ object RimeMap {
             }
         }
 
-        // Phase 3: sort and fill primitive arrays
-        val sorted = ArrayList(map.values)
-        sorted.sortBy { it.hk }
-        _size = sorted.size
-        _keys = LongArray(_size); _tnNew = ShortArray(_size); _tnOld = ShortArray(_size)
-        _stop = ByteArray(_size); _comp = ByteArray(_size)
-        for (i in 0 until _size) {
-            val e = sorted[i]
-            _keys[i] = e.hk
-            _tnNew[i] = e.tnN.toShort()
-            _tnOld[i] = e.tnO.toShort()
-            _stop[i] = e.isStop.toByte()
-            _comp[i] = e.isComp.toByte()
+        // Phase 3: build open-addressing hash table (linear probing)
+        val entryCount = map.size
+        var cap = 16
+        var tableBits = 4
+        while (cap < entryCount * 2) { cap *= 2; tableBits++ }   // load factor ~0.5
+        _mask = cap - 1
+        _shift = 64 - tableBits
+
+        _tableKeys  = LongArray(cap)
+        _tnNew      = ShortArray(cap)
+        _tnOld      = ShortArray(cap)
+        _stop       = ByteArray(cap)
+        _comp       = ByteArray(cap)
+
+        for (e in map.values) {
+            val hk = e.hk
+            var slot = (hk ushr _shift).toInt() and _mask
+            // Find empty slot (0L sentinel — hash is never 0)
+            while (_tableKeys[slot] != 0L) slot = (slot + 1) and _mask
+            _tableKeys[slot] = hk
+            _tnNew[slot]     = e.tnN.toShort()
+            _tnOld[slot]     = e.tnO.toShort()
+            _stop[slot]      = e.isStop.toByte()
+            _comp[slot]      = e.isComp.toByte()
         }
     }
 
