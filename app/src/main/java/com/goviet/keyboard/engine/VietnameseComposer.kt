@@ -486,7 +486,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             return handleVowelChar(state, c)
         }
 
-        if (VietnamesePhonology.isConsonant(lower)) {
+        if (c.isLetter()) {
             return handleConsonantChar(state, c)
         }
 

@@ -28,17 +28,7 @@ private val BASE_VOWELS = setOf(
         'ạ', 'ặ', 'ậ', 'ẹ', 'ệ', 'ị', 'ỵ', 'ọ', 'ộ', 'ợ', 'ụ', 'ự'
     )
 
-    /**
-     * Consonant letters recognized while typing (superset of valid onsets:
-     * includes f/j/q/w/x/z which are not valid Vietnamese onsets but are Telex
-     * modifier or literal letters).
-     */
-    private val CONSONANTS = setOf(
-        'b', 'c', 'd', 'đ', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n',
-        'p', 'q', 'r', 's', 't', 'v', 'w', 'x', 'z'
-    )
-
-    /**
+/**
      * Valid initial consonantal clusters (longest-first order for greedy matching).
      */
     val ONSETS = arrayOf(
@@ -63,10 +53,7 @@ private val BASE_VOWELS = setOf(
      */
     fun isVowel(c: Char): Boolean = c.lowercaseChar() in VOWELS
 
-    fun isConsonant(c: Char): Boolean = c.lowercaseChar() in CONSONANTS
-
-
-    // ============================================================
+// ============================================================
     // SECTION 2: ZERO-GC FLAT MAP RIME DATA (validation, tone placement)
     // ============================================================
 
