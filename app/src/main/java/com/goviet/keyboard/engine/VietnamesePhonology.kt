@@ -137,6 +137,21 @@ private val BASE_VOWELS = setOf(
         RimeMap.isToneAllowed(hash, tone.index)
 
     /**
+     * Check if a precomputed hash is a valid prefix of any Vietnamese rime.
+     * Zero allocation — delegates directly to the flat map.
+     */
+    fun isValidPrefixHash(hash: Long): Boolean = RimeMap.isValidPrefix(hash)
+
+    /**
+     * Determine tone position from a precomputed rime hash — zero allocation.
+     */
+    fun determineTonePositionHash(rimeHash: Long, oldTonePlacement: Boolean): Int {
+        val i = RimeMap.indexOf(rimeHash)
+        if (i < 0) return 0
+        return if (oldTonePlacement) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
+    }
+
+    /**
      * Determine tone mark position with onset prefix preprocessing (qu/gi).
      */
     fun findTonePosition(onset: CharSequence, rime: CharSequence, oldTonePlacement: Boolean): Int? {

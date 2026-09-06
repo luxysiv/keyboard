@@ -38,6 +38,26 @@ object RimeMap {
     }
 
     @JvmStatic
+    fun hashExtend(baseHash: Long, c: Char): Long {
+        var h = baseHash xor (c.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
+        return h or 1L
+    }
+
+    @JvmStatic
+    fun hashExtend(baseHash: Long, cs: CharSequence, start: Int, length: Int): Long {
+        var h = baseHash; var i = start; val end = start + length
+        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        return h or 1L
+    }
+
+    @JvmStatic
+    fun hashExtend(baseHash: Long, cs: CharArray, start: Int, length: Int): Long {
+        var h = baseHash; var i = start; val end = start + length
+        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        return h or 1L
+    }
+
+    @JvmStatic
     fun hashAppend(base: CharSequence, baseLen: Int, c: Char): Long {
         var h = FNV_OFF; var i = 0
         while (i < baseLen) { h = h xor (base[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }

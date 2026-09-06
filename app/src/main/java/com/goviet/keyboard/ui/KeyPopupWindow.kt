@@ -35,18 +35,19 @@ class KeyPopupWindow(private val context: Context) {
 
     private data class PopupPosition(val x: Int, val y: Int, val width: Int, val height: Int)
 
+    private val locationBuf = IntArray(2)
+
     private fun computePosition(anchorView: View, keyRect: RectF?, widthDp: Int): PopupPosition {
         val density = context.density
         val width = (widthDp * density).toInt()
         val height = (72 * density).toInt()
 
-        val location = IntArray(2)
-        anchorView.getLocationInWindow(location)
+        anchorView.getLocationInWindow(locationBuf)
 
         val keyCenterX = if (keyRect != null) {
-            location[0] + keyRect.centerX()
+            locationBuf[0] + keyRect.centerX()
         } else {
-            location[0] + anchorView.width / 2f
+            locationBuf[0] + anchorView.width / 2f
         }
         val idealLeft = keyCenterX - width / 2f
         val screenWidth = context.resources.displayMetrics.widthPixels
@@ -56,9 +57,9 @@ class KeyPopupWindow(private val context: Context) {
 
         val x = left.toInt()
         val y = if (keyRect != null) {
-            (location[1] + keyRect.top - height - 4f * density).toInt()
+            (locationBuf[1] + keyRect.top - height - 4f * density).toInt()
         } else {
-            location[1] - (70 * density).toInt()
+            locationBuf[1] - (70 * density).toInt()
         }
 
         return PopupPosition(x, y, width, height)

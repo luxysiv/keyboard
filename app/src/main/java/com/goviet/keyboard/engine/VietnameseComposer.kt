@@ -96,9 +96,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 return
             }
 
-            val rime = nucleus + coda
-            val placement = if (oldTonePlacement) TonePlacement.LEGACY else TonePlacement.MODERN
-            val toneIdx = VietnamesePhonology.determineTonePosition(rime, onset, placement)
+            val rimeHash = RimeMap.hashCat(nucleus, nucleus.length, coda, coda.length)
+            val toneIdx = VietnamesePhonology.determineTonePositionHash(rimeHash, oldTonePlacement)
 
             for (i in 0 until onset.length) out.append(onset[i])
             for (i in 0 until nucleus.length) {
@@ -164,6 +163,28 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         if (rawLen == 0) return
         if (!vietnamese || !vietnameseModeEnabled) {
             out.append(raw)
+            return
+        }
+        replayState.reset()
+        for (i in 0 until rawLen) {
+            when (feedChar(replayState, raw[i], true, isStaticReDerive = false, out = replayOut)) {
+                CoreStep.BOUNDARY -> {
+                    out.append(replayOut.committedBuffer)
+                    out.append(replayOut.separator)
+                }
+                CoreStep.MUTATION -> { /* display updated by the kernel */ }
+            }
+        }
+        replayState.toDisplayBuffer(out, options.oldTonePlacement)
+    }
+
+        /** Compile with a maximum character limit — avoids substring allocation. */
+        fun compileRaw(raw: CharSequence, vietnamese: Boolean, out: OwnedBuffer, maxLen: Int) {
+        out.clear()
+        val rawLen = maxLen.coerceAtMost(raw.length)
+        if (rawLen == 0) return
+        if (!vietnamese || !vietnameseModeEnabled) {
+            out.append(raw, 0, rawLen)
             return
         }
         replayState.reset()
@@ -477,7 +498,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun handleKeyD(state: SyllableState, c: Char): Boolean {
         val isUpper = c.isUpperCase()
 
-        if (state.lastToggle?.key == 'd' && (state.onset.lowercase() == "đ")) {
+        if (state.lastToggle?.key == 'd' && state.onset.length == 1 && state.onset[0].lowercaseChar() == 'đ') {
             val dChar = if (state.onset[0].isUpperCase()) "D" else "d"
             state.onset = dChar
             val extraChar = if (isUpper) "D" else "d"
@@ -490,8 +511,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             return true
         }
 
-        val onsetLower = state.onset.lowercase()
-        if (onsetLower == "d") {
+        if (state.onset.length == 1 && state.onset[0].lowercaseChar() == 'd') {
             val dChar = if (state.onset[0].isUpperCase()) "Đ" else "đ"
             state.onset = dChar
             val hadCharsAfter = state.nucleus.isNotEmpty() || state.coda.isNotEmpty()
@@ -519,14 +539,17 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         val targetTone = Tone.fromKey(key) ?: return false
 
-        val nucleusLower = state.nucleus.lowercase()
-        if (nucleusLower == "aa" || nucleusLower == "ee") {
-            return false
+        // Check raw nucleus for double-letter guard (aa/ee) — direct char check, no String alloc
+        val nLen = state.nucleus.length
+        if (nLen >= 2) {
+            val c0 = state.nucleus[0].lowercaseChar()
+            val c1 = state.nucleus[1].lowercaseChar()
+            if ((c0 == 'a' && c1 == 'a') || (c0 == 'e' && c1 == 'e')) return false
         }
 
-        // Validate rime + tone in a single flat-map lookup
-        val currentRime = state.nucleus + state.coda
-        if (!VietnamesePhonology.isRimeValidForTone(currentRime, targetTone)) {
+        // Validate rime + tone in a single hash lookup — zero allocation
+        val currentRimeHash = RimeMap.hashCat(state.nucleus, nLen, state.coda, state.coda.length)
+        if (!VietnamesePhonology.isRimeHashValidForTone(currentRimeHash, targetTone)) {
             return false
         }
 
@@ -673,9 +696,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         // 3. Normal vowel expansion into nucleus (if no coda yet)
         if (state.coda.isEmpty()) {
-            val candidate = state.nucleus + c
-            if (VietnamesePhonology.isValidPrefix(candidate)) {
-                state.nucleus = candidate
+            // Hash nucleus + new char incrementally — zero allocation
+            val nucHash = RimeMap.hash(state.nucleus)
+            if (VietnamesePhonology.isValidPrefixHash(RimeMap.hashExtend(nucHash, c))) {
+                state.nucleus = state.nucleus + c
                 state.lastToggle = null
                 return true
             }
@@ -704,20 +728,31 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         }
 
         var effectiveNucleus = state.nucleus
-        if (NUCLEUS_AUTOPROMOTIONS.containsKey(effectiveNucleus.lowercase())) {
+        // Auto-promotion check: direct lowercaseChar comparison — no String.lowercase() alloc
+        val effLowerLen = effectiveNucleus.length
+        if (effLowerLen == 2 && effectiveNucleus[0].lowercaseChar() == 'u' && effectiveNucleus[1].lowercaseChar() == 'ơ') {
             effectiveNucleus = VietnamesePhonology.buildUoPair(effectiveNucleus[0], effectiveNucleus[1], hornU = true)
         }
 
-        // Validate: coda chars + rime existence + tone allowed
-        val candidateCoda = state.coda + c
-        val newRimeKey = effectiveNucleus.lowercase() + candidateCoda.lowercase()
-        if (VietnamesePhonology.isValidCoda(candidateCoda) &&
-            VietnamesePhonology.isValidPrefix(newRimeKey) &&
-            VietnamesePhonology.isRimeValidForTone(newRimeKey, state.tone)) {
-            state.nucleus = effectiveNucleus
-            state.coda = candidateCoda
-            state.lastToggle = null
-            return true
+        // Validate coda + rime + tone — all hash-based, zero allocation
+        // Coda max 2 chars; single-char coda must be m/p/n/t/c
+        val cLow = c.lowercaseChar()
+        val codaValid = if (state.coda.isEmpty()) {
+            cLow == 'm' || cLow == 'p' || cLow == 'n' || cLow == 't' || cLow == 'c'
+        } else if (state.coda.length == 1) {
+            val c0 = state.coda[0].lowercaseChar()
+            (c0 == 'n' && (cLow == 'g' || cLow == 'h')) || (c0 == 'c' && cLow == 'h')
+        } else false
+        if (codaValid) {
+            val rimeHash = RimeMap.hashCat(effectiveNucleus, effectiveNucleus.length, state.coda, state.coda.length)
+            val candidateRimeHash = RimeMap.hashExtend(rimeHash, c)
+            if (VietnamesePhonology.isValidPrefixHash(candidateRimeHash) &&
+                VietnamesePhonology.isRimeHashValidForTone(candidateRimeHash, state.tone)) {
+                state.nucleus = effectiveNucleus
+                state.coda = state.coda + c
+                state.lastToggle = null
+                return true
+            }
         }
 
         state.lastToggle = null

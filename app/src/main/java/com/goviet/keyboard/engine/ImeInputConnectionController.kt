@@ -828,9 +828,9 @@ class ImeInputConnectionController(
      * function, so what the user sees is always exactly what gets committed.
      */
     fun compileRawDisplay(): String {
-        val raw = composingRaw.toString()
-        if (raw.isEmpty()) return ""
-        return compileText(raw)
+        if (composingRaw.isEmpty()) return ""
+        inputEngine.compileRaw(composingRaw, isVietnamese, displayBuf)
+        return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), composingRaw.toString())
     }
 
     /**
@@ -841,7 +841,8 @@ class ImeInputConnectionController(
     fun compilePrefixDisplay(raw: CharSequence, end: Int): String {
         if (end <= 0) return ""
         if (end >= raw.length) return compileRawDisplay()
-        inputEngine.compileRaw(raw.subSequence(0, end), isVietnamese, displayBuf)
+        // Pass raw + end directly — compileRaw reads chars without needing a substring
+        inputEngine.compileRaw(raw, isVietnamese, displayBuf, end)
         return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), raw.subSequence(0, end).toString())
     }
 
