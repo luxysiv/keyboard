@@ -215,7 +215,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         isStaticReDerive: Boolean = false,
         out: StepOut
     ): CoreStep {
-        if (BoundaryClassifier.isBoundaryChar(c)) {
+        if (isBoundaryKey(c)) {
             out.committedBuffer.clear()
             state.toDisplayBuffer(out.committedBuffer, options.oldTonePlacement)
             out.separator = c
@@ -427,15 +427,61 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
         }
 
-        @JvmStatic
-        fun isToneKey(c: Char): Boolean = when (c.lowercaseChar()) {
-            's', 'f', 'r', 'x', 'j', 'z' -> true
-            else -> false
+        private const val PROP_BOUNDARY = 32
+        private const val PROP_TONE = 1
+        private const val PROP_MOD = 2
+        private const val PROP_VOWEL = 4
+        private const val PROP_ONSET = 8
+        private const val PROP_D = 16
+        private const val PROP_D_ONSET = PROP_D or PROP_ONSET
+        private const val PROP_TONE_ONSET = PROP_TONE or PROP_ONSET
+        private const val PROP_MOD_VOWEL = PROP_MOD or PROP_VOWEL
+
+        /**
+         * Key property bitmap — one array read classifies every keystroke on the
+         * applyKey hot path (boundary → d/đ → tone → vowel modifier → vowel →
+         * onset → raw), replacing 5 sequential classifier checks with a single
+         * lookup + one switch.  Zero allocation, cache-resident.
+         * Size 512 covers all base Vietnamese letters (đ=273, ơ=417, ư=432).
+         */
+        private val CHAR_PROPS = ByteArray(512).also { p ->
+            for (c in "sfrxjz") p[c.code] = (p[c.code].toInt() or PROP_TONE).toByte()
+            for (c in "eoaw") p[c.code] = (p[c.code].toInt() or PROP_MOD).toByte()
+            for (c in "aăâeêioôơuưy") p[c.code] = (p[c.code].toInt() or PROP_VOWEL).toByte()
+            for (c in "bcdđghklmnprstvxq") p[c.code] = (p[c.code].toInt() or PROP_ONSET).toByte()
+            p['d'.code] = (p['d'.code].toInt() or PROP_D).toByte() // only d → handleKeyD; đ stays an onset
+            // Boundary set == BoundaryClassifier: ASCII whitespace + separators +
+            // NEL(133), NBSP(160), «(171), »(187) — all < 256.
+            for (code in intArrayOf(
+                9, 10, 11, 12, 13, 28, 29, 30, 31, 32,
+                33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+                58, 59, 60, 61, 62, 63, 64, 91, 92, 93, 94, 95, 96,
+                123, 124, 125, 126, 133, 160, 171, 187
+            )) p[code] = (p[code].toInt() or PROP_BOUNDARY).toByte()
         }
 
         @JvmStatic
-        fun isVowelModifierKey(c: Char): Boolean = c.lowercaseChar() in VOWEL_MODIFIER_KEYS
+        private fun charProps(c: Char): Int {
+            val code = c.lowercaseChar().code
+            return if (code < CHAR_PROPS.size) CHAR_PROPS[code].toInt() else 0
+        }
 
+        @JvmStatic
+        fun isToneKey(c: Char): Boolean = charProps(c) and PROP_TONE != 0
+
+        @JvmStatic
+        fun isVowelModifierKey(c: Char): Boolean = charProps(c) and PROP_MOD != 0
+
+        /**
+         * Boundary test via the same bitmap; chars above the table fall back to
+         * Character.isWhitespace (the only high-Unicode boundary class).
+         */
+        @JvmStatic
+        private fun isBoundaryKey(c: Char): Boolean {
+            val code = c.code
+            if (code < CHAR_PROPS.size) return (CHAR_PROPS[code].toInt() and PROP_BOUNDARY) != 0
+            return c.isWhitespace()
+        }
 
         /** Modifier key → TargetType for fold dispatch. */
         private val MODIFIER_TARGET_TYPES = mapOf(
@@ -446,8 +492,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         /** Nucleus auto-promotion: uơ → ươ when consonant follows. */
         private val NUCLEUS_AUTOPROMOTIONS = mapOf("uơ" to true)
-
-        private val VOWEL_MODIFIER_KEYS = setOf('e', 'o', 'a', 'w')
     }
 
     private fun applyKey(state: SyllableState, c: Char, isStaticReDerive: Boolean): Boolean {
@@ -467,29 +511,30 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             return true
         }
 
-        if (lower == 'd') {
-            val handled = handleKeyD(state, c)
-            if (handled) return true
-        }
-
-        if (isToneKey(lower)) {
-            val handled = handleToneKey(state, lower)
-            if (handled) return true
-        }
-
-        if (isVowelModifierKey(lower)) {
-            val handled = handleVowelModifierKey(state, lower, isUpper, isStaticReDerive)
-            if (handled) return true
-        }
-
-        if (VietnamesePhonology.isBaseVowel(lower)) {
-            return handleVowelChar(state, c)
-        }
-
-        // Onset consonants: b,c,d,đ,g,h,k,l,m,n,p,r,s,t,v,x + q (for qu cluster)
-        // f,j,w,z → not Vietnamese consonants → raw text directly
-        if (lower in "bcdđghklmnprstvx" || lower == 'q') {
-            return handleConsonantChar(state, c)
+        // Single bitmap lookup + one switch routes every key to its handler,
+        // preserving the old priority order: d/đ → tone → vowel modifier →
+        // vowel → onset; everything else is raw text.
+        when (charProps(lower)) {
+            PROP_D_ONSET -> {
+                if (handleKeyD(state, c)) return true
+                return handleConsonantChar(state, c)
+            }
+            PROP_TONE -> {
+                if (handleToneKey(state, lower)) return true
+            }
+            PROP_TONE_ONSET -> {
+                if (handleToneKey(state, lower)) return true
+                return handleConsonantChar(state, c) // r/s/x stay valid onsets
+            }
+            PROP_MOD -> {
+                if (handleVowelModifierKey(state, lower, isUpper, isStaticReDerive)) return true
+            }
+            PROP_MOD_VOWEL -> {
+                if (handleVowelModifierKey(state, lower, isUpper, isStaticReDerive)) return true
+                return handleVowelChar(state, c) // a/e/o fall back to vowels
+            }
+            PROP_VOWEL -> return handleVowelChar(state, c)
+            PROP_ONSET -> return handleConsonantChar(state, c)
         }
 
         state.lastToggle = null
