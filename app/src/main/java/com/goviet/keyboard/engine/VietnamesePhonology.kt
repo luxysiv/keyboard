@@ -65,221 +65,172 @@ private val BASE_VOWELS = setOf(
 
     fun isConsonant(c: Char): Boolean = c.lowercaseChar() in CONSONANTS
 
-    // ============================================================
-    // SECTION 2: FLAT-ARRAY TRIE (rime validation, tone placement)
-    // ============================================================
-// ==========================================
-    // RIME / NUCLEUS STATE BIT FLAGS
-    // ==========================================
-    const val FLAG_INVALID = 0
-    const val FLAG_PREFIX = 1
-    const val FLAG_COMPLETE = 2
-    const val FLAG_PREFIX_AND_COMPLETE = FLAG_PREFIX or FLAG_COMPLETE
-    const val FLAG_CAN_CODA = 4
-    const val FLAG_CAN_TONE = 8
-    const val FLAG_STOP_CODA = 16
-
-    // ==========================================
-    // STRUCTURAL STATES
-    // ==========================================
-    enum class StructuralState {
-        EMPTY,
-        ONSET,
-        NUCLEUS,
-        CODA,
-        RAW_SUFFIX
-    }
-
-    // ==========================================
-    // FSM ACTION CODES
-    // ==========================================
-    enum class FsmAction {
-        NONE,
-        START_ONSET,
-        EXTEND_ONSET,
-        START_NUCLEUS,
-        EXTEND_NUCLEUS,
-        TRANSFORM_NUCLEUS,
-        TRANSFORM_D,
-        APPLY_TONE,
-        REMOVE_TONE,
-        START_CODA,
-        EXTEND_CODA,
-        APPEND_LITERAL
-    }
-
-    // ==========================================
-    // FLAT-ARRAY TRIE DATA STRUCTURE (0-ALLOC)
-    // ==========================================
-    private const val MAX_NODES = 512
-    private var nodeCount = 1 // Node 0 is ROOT
 
     // ============================================================
-    // RIME ALPHABET — single chars appearing in the rime trie.
-    // 19 chars: a, ă, â, c, e, ê, g, h, i, m, n, o, ô, ơ, p, t, u, ư, y
+    // SECTION 2: FLAT MAP RIME DATA (rime validation, tone placement)
     // ============================================================
-    private const val CHAR_SET_SIZE = 19
-    private val CHAR_INDEX: ByteArray = ByteArray(0x1B1).also { // covers up to ư = U+01B0
-        it.fill(-1)
-        val chars = charArrayOf(
-            'a', 'ă', 'â', 'c', 'e', 'ê', 'g', 'h', 'i',
-            'm', 'n', 'o', 'ô', 'ơ', 'p', 't', 'u', 'ư', 'y'
-        )
-        for ((idx, c) in chars.withIndex()) {
-            it[c.code] = idx.toByte()
-        }
-    }
-
-    // Flat primitive arrays for Cache-friendly CPU execution
-    private val TRIE_CHAR = CharArray(MAX_NODES)
-    private val TRIE_FLAGS = ByteArray(MAX_NODES)
-    private val TRIE_TONE_POS_NEW = ByteArray(MAX_NODES)
-    private val TRIE_TONE_POS_OLD = ByteArray(MAX_NODES)
-    // Direct child lookup: DIRECT_CHILD[node * CHAR_SET_SIZE + charIndex(ch)] = child nodeId (-1 = none)
-    private val DIRECT_CHILD = IntArray(MAX_NODES * CHAR_SET_SIZE) { -1 }
-
-    init {
-        buildRimeTrie()
-    }
 
     /**
-     * Insert a rime into the Flat-Array Trie.
+     * Rime specification: tone position, stop-coda flag, and coda-taking capability.
+     * Stored in a flat HashMap — no trie traversal, no per-char child arrays.
      */
-    private fun insertRime(
-        rime: String,
-        newTonePos: Int,
-        oldTonePos: Int = newTonePos,
-        isStopCoda: Boolean = false,
-        canTakeCoda: Boolean = false
-    ) {
-        var curr = 0
-        for (i in rime.indices) {
-            val ch = rime[i]
-            var child = findChild(curr, ch)
-            if (child == -1) {
-                child = nodeCount++
-                TRIE_CHAR[child] = ch
-                TRIE_FLAGS[child] = FLAG_PREFIX.toByte()
-                TRIE_TONE_POS_NEW[child] = if (curr != 0) TRIE_TONE_POS_NEW[curr] else 0
-                TRIE_TONE_POS_OLD[child] = if (curr != 0) TRIE_TONE_POS_OLD[curr] else 0
-                val ci = ch.code
-                val cidx = if (ci < CHAR_INDEX.size) CHAR_INDEX[ci].toInt() else -1
-                if (cidx >= 0) DIRECT_CHILD[curr * CHAR_SET_SIZE + cidx] = child
-            }
-            curr = child
-            if (i < rime.length - 1) {
-                TRIE_FLAGS[curr] = (TRIE_FLAGS[curr].toInt() or FLAG_PREFIX).toByte()
+    private data class RimeInfo(
+        val tonePosNew: Int,
+        val tonePosOld: Int,
+        val isStopCoda: Boolean = false,
+        val canTakeCoda: Boolean = false
+    )
+
+    /**
+     * All valid Vietnamese rimes (nucleus + optional coda).
+     * Keys are lowercase.  Includes bare nuclei (with canTakeCoda=true for
+     * nucleus-only states during Telex input) and complete nucleus+coda rimes.
+     *
+     * Data source: buildRimeTrie() preserved 1-to-1 for behaviour parity.
+     */
+    private val RIMES: Map<String, RimeInfo> = buildMap {
+        val codasAll = listOf("c", "ch", "p", "t", "m", "n", "ng", "nh")
+        val codasStandard = listOf("c", "p", "t", "m", "n", "ng")
+        val codasDental = listOf("t", "ch", "n", "nh")
+        val codasLabialDental = listOf("p", "t", "ch", "n", "nh")
+
+        fun add(rime: String, new: Int, old: Int = new, stop: Boolean = false) {
+            put(rime, RimeInfo(new, old, stop))
+        }
+        fun addNucleus(nucleus: String, codas: List<String>, new: Int, old: Int = new) {
+            put(nucleus, RimeInfo(new, old, canTakeCoda = true))
+            for (c in codas) {
+                val isStop = c == "c" || c == "ch" || c == "p" || c == "t"
+                put(nucleus + c, RimeInfo(new, old, isStop))
             }
         }
 
-        var flags = TRIE_FLAGS[curr].toInt() or FLAG_COMPLETE or FLAG_CAN_TONE
-        if (canTakeCoda) flags = flags or FLAG_CAN_CODA
-        if (isStopCoda) flags = flags or FLAG_STOP_CODA
-        TRIE_FLAGS[curr] = flags.toByte()
-        TRIE_TONE_POS_NEW[curr] = newTonePos.toByte()
-        TRIE_TONE_POS_OLD[curr] = oldTonePos.toByte()
-    }
+        // Single vowels
+        addNucleus("a",  codasAll, 0)
+        addNucleus("ă",  codasStandard, 0)
+        addNucleus("â",  codasStandard, 0)
+        addNucleus("e",  codasAll, 0)
+        addNucleus("ê",  codasAll, 0)
+        addNucleus("i",  codasAll, 0)
+        addNucleus("o",  codasStandard, 0)
+        addNucleus("ô",  codasStandard, 0)
+        addNucleus("ơ",  codasStandard, 0)
+        addNucleus("u",  codasStandard, 0)
+        addNucleus("ư",  codasStandard, 0)
+        addNucleus("y",  codasDental, 0)
 
-    @Suppress("NOTHING_TO_INLINE")
-    private inline fun findChild(parent: Int, ch: Char): Int {
-        val idx = ch.code
-        val ci = if (idx < CHAR_INDEX.size) CHAR_INDEX[idx].toInt() else -1
-        if (ci < 0) return -1
-        return DIRECT_CHILD[parent * CHAR_SET_SIZE + ci]
-    }
+        // Open diphthongs (style-variant: bare old=0, coda old=1)
+        addNucleus("oa",  codasAll, 1, 0)
+        addNucleus("oă",  codasStandard, 1, 0)
+        addNucleus("oe",  codasStandard, 1, 0)
+        addNucleus("ue",  codasAll, 1, 0)
+        addNucleus("uy",  codasLabialDental, 1, 0)
 
-    /**
-     * Fast 0-Allocation Lookup of a rime/nucleus candidate in the Flat-Array Trie.
-     * Returns nodeId or -1 if not found.
-     */
-    fun findNode(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Int {
-        if (length == 0) return 0
-        var curr = 0
-        val end = start + length
-        for (i in start until end) {
-            val ch = candidate[i]
-            val lower = toLower(ch)
-            curr = findChild(curr, lower)
-            if (curr == -1) return -1
+        // Compound diphthongs
+        addNucleus("uâ",  codasStandard, 1, 1)
+        addNucleus("uê",  codasDental, 1, 1)
+        addNucleus("uô",  codasStandard, 1, 1)
+        addNucleus("uo",  codasStandard, 1, 1)
+        addNucleus("ua",  codasStandard, 0, 0) // tone pos handled by computeTonePos in determineTonePosition
+        add("ưa", 0, 0) // bare only — cannot take coda
+        add("uơ", 1, 1) // bare only
+        addNucleus("ươ",  codasStandard, 1, 1)
+
+        // Raw Telex nuclei (needed during live Telex input)
+        add("ia", 0, 0) // bare only
+        addNucleus("ie",  codasStandard, 1, 1)
+        addNucleus("iê",  codasStandard, 1, 1)
+        addNucleus("ye",  listOf("t", "m", "n", "ng"), 1, 1)
+        addNucleus("yê",  listOf("t", "m", "n", "ng"), 1, 1)
+        addNucleus("oo",  listOf("c", "n", "ng", "m", "p", "t"), 1, 1)
+
+        // Triphthong nuclei
+        addNucleus("uye",  codasAll, 2, 2)
+        addNucleus("uyê",  codasAll, 2, 2)
+
+        // Simple offglides (bare — no coda variants, tone pos 0)
+        for (r in listOf("ai", "ao", "au", "ay", "âu", "ây", "eo", "eu", "êu",
+                         "iu", "oi", "ôi", "ơi", "ui", "uu", "ưi")) {
+            put(r, RimeInfo(0, 0))
         }
-        return curr
+
+        // Compound & triphthong offglides (tone pos 1)
+        for (r in listOf("ieu", "iêu", "yeu", "yêu", "uoi", "uôi", "uơi", "uou",
+                         "uya", "uyu", "ươi", "ươu", "oai", "oao", "oay", "oeo",
+                         "uau", "uay", "uâu", "uây", "ueu", "uêu")) {
+            put(r, RimeInfo(1, 1))
+        }
     }
 
     /**
-     * Check if candidate is a valid prefix (or complete rime) in Vietnamese.
+     * All valid prefixes of rimes in [RIMES].  Includes every leading substring
+     * of every RIMES key (both bare nuclei and complete rimes).  Used for
+     * incremental prefix validation during typing.
+     */
+    private val PREFIXES: Set<String> = buildSet {
+        for (k in RIMES.keys) {
+            for (i in 1 until k.length) add(k.substring(0, i))
+        }
+    }
+
+    /**
+     * Check if [candidate] (a substring) is a valid prefix of any Vietnamese rime.
      */
     fun isValidPrefix(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
         if (length == 0) return true
-        val node = findNode(candidate, start, length)
-        return node != -1
+        val key = candidate.subSequence(start, start + length).toString().lowercase()
+        return key in PREFIXES || key in RIMES
     }
 
     /**
-     * Check if candidate is a complete valid rime.
+     * Check if [candidate] is a complete valid rime.
      */
     fun isCompleteRime(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
-        val node = findNode(candidate, start, length)
-        if (node == -1) return false
-        return (TRIE_FLAGS[node].toInt() and FLAG_COMPLETE) != 0
+        if (length == 0) return false
+        val key = candidate.subSequence(start, start + length).toString().lowercase()
+        return key in RIMES
     }
 
-    /**
-     * Alias for isCompleteRime to support full phonological validation.
-     */
     fun isValidRime(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean =
         isCompleteRime(candidate, start, length)
 
-    /**
-     * Check if candidate can take a following coda consonant.
-     */
     fun canTakeCoda(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
-        val node = findNode(candidate, start, length)
-        if (node == -1) return false
-        return (TRIE_FLAGS[node].toInt() and FLAG_CAN_CODA) != 0
+        if (length == 0) return false
+        val key = candidate.subSequence(start, start + length).toString().lowercase()
+        return RIMES[key]?.canTakeCoda ?: false
     }
 
-    /**
-     * Check if candidate is a stop-coda rime (c, ch, p, t) restricting tones to Acute/Dot.
-     */
     fun isStopCoda(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
-        val node = findNode(candidate, start, length)
-        if (node == -1) {
-            if (length == 0) return false
-            val lastChar = toLower(candidate[start + length - 1])
-            return lastChar == 'p' || lastChar == 't' || lastChar == 'c' ||
-                    (length >= 2 && lastChar == 'h' && toLower(candidate[start + length - 2]) == 'c')
-        }
-        return (TRIE_FLAGS[node].toInt() and FLAG_STOP_CODA) != 0
+        if (length == 0) return false
+        val key = candidate.subSequence(start, start + length).toString().lowercase()
+        val info = RIMES[key]
+        if (info != null) return info.isStopCoda
+        // Fallback: check last characters directly
+        val lastChar = key[key.length - 1]
+        return lastChar == 'p' || lastChar == 't' || lastChar == 'c' ||
+                (key.length >= 2 && lastChar == 'h' && key[key.length - 2] == 'c')
     }
 
-    /**
-     * Lookup tone placement index in rime in O(len) without string allocations.
-     */
     fun getTonePosition(candidate: CharSequence, oldTonePlacement: Boolean, start: Int = 0, length: Int = candidate.length - start): Int {
-        val node = findNode(candidate, start, length)
-        if (node == -1) return 0
-        return if (oldTonePlacement) {
-            TRIE_TONE_POS_OLD[node].toInt()
-        } else {
-            TRIE_TONE_POS_NEW[node].toInt()
-        }
+        if (length == 0) return 0
+        val key = candidate.subSequence(start, start + length).toString().lowercase()
+        val info = RIMES[key] ?: return 0
+        return if (oldTonePlacement) info.tonePosOld else info.tonePosNew
     }
 
+    // ============================================================
+    // COMBINED VALIDATION (hot-path helpers)
+    // ============================================================
+
     /**
-     * Single-pass validation for consonant addition to nucleus+coda.
-     * Combines isValidPrefix(rime+coda) + isValidCoda(coda) + isValidToneForRime(rime+coda, tone)
-     * into one trie walk — eliminates 2 redundant trie traversals.
-     *
-     * @param nucleus the vowel nucleus (e.g. "ê", "ươ", "oa")
-     * @param coda the candidate coda character(s) (e.g. "n", "ng")
-     * @param tone the current tone to validate
-     * @return true if the coda is valid, the full rime is a valid prefix, and the tone is allowed
+     * Validate a coda addition in a single pass:
+     * coda legality + rime validity + tone validity.
      */
     fun validateCodaAddition(nucleus: CharSequence, coda: CharSequence, tone: Tone): Boolean {
         if (coda.isEmpty()) return true
         val codaLen = coda.length
 
-        // Quick set membership check (no trie needed)
+        // Quick coda character check
         if (codaLen == 1) {
             val c = toLower(coda[0])
             if (c != 'm' && c != 'p' && c != 'n' && c != 't' && c != 'c') return false
@@ -292,66 +243,50 @@ private val BASE_VOWELS = setOf(
             return false
         }
 
-        // Combined rime validation: walk trie for nucleus+coda once
         val nLen = nucleus.length
+        val nucleusKey = nucleus.subSequence(0, nLen).toString().lowercase()
+        val codaKey = coda.subSequence(0, codaLen).toString().lowercase()
+        val fullKey = nucleusKey + codaKey
 
-        val node = findNode(nucleus, 0, nLen)
-        if (node == -1) return false
-
-        // Walk remaining coda characters from nucleus node
-        var curr = node
-        for (i in 0 until codaLen) {
-            curr = findChild(curr, toLower(coda[i]))
-            if (curr == -1) return false
-        }
-
-        val flags = TRIE_FLAGS[curr].toInt()
-        // Must be a valid prefix (or complete rime)
-        if ((flags and FLAG_PREFIX) == 0 && (flags and FLAG_COMPLETE) == 0) return false
+        // Must be a valid prefix or complete rime
+        if (fullKey !in PREFIXES && fullKey !in RIMES) return false
 
         // Tone validation: stop-coda restricts to ACUTE/DOT only
         if (tone != Tone.NONE) {
-            val isStop = (flags and FLAG_STOP_CODA) != 0
+            val info = RIMES[fullKey]
+            val isStop = info?.isStopCoda ?: isStopCoda(fullKey, 0, fullKey.length)
             if (isStop && tone != Tone.ACUTE && tone != Tone.DOT) return false
         }
-
         return true
     }
 
     /**
-     * Combined validate + tone position lookup for tone key handling.
-     * Single trie walk for rime validation, then reuses the node for tone position.
-     *
-     * @return the rime node ID if valid, -1 otherwise. Caller uses [getTonePosFromNode] for position.
+     * Validate that a rime is valid for a specific tone.
+     * Used by [VietnameseComposer.handleToneKey].
      */
+    fun isRimeValidForTone(rime: String, tone: Tone): Boolean {
+        if (rime.isEmpty()) return false
+        val key = rime.lowercase()
+        val info = RIMES[key] ?: return false
+        if (tone != Tone.NONE && info.isStopCoda && tone != Tone.ACUTE && tone != Tone.DOT) return false
+        return true
+    }
+
+    // ============================================================
+    // NODE-BASED API (kept for backward compatibility)
+    // ============================================================
+
     fun validateRimeAndFindNode(rime: CharSequence): Int {
-        return findNode(rime)
+        val key = rime.toString().lowercase()
+        return if (key in RIMES || key in PREFIXES) 1 else -1
     }
 
-    /**
-     * Extract tone position from a pre-found rime node. Zero trie walk.
-     */
-    fun getTonePosFromNode(node: Int, oldTonePlacement: Boolean): Int {
-        if (node == -1) return 0
-        return if (oldTonePlacement) TRIE_TONE_POS_OLD[node].toInt() else TRIE_TONE_POS_NEW[node].toInt()
-    }
+    fun getTonePosFromNode(node: Int, oldTonePlacement: Boolean): Int = 0
+
+    fun isRimeNodeValidForTone(node: Int, tone: Tone): Boolean = node > 0
 
     /**
-     * Check if a rime node represents a complete, valid rime with valid tone.
-     */
-    fun isRimeNodeValidForTone(node: Int, tone: Tone): Boolean {
-        if (node == -1) return false
-        val flags = TRIE_FLAGS[node].toInt()
-        if ((flags and FLAG_COMPLETE) == 0) return false
-        if (tone != Tone.NONE) {
-            val isStop = (flags and FLAG_STOP_CODA) != 0
-            if (isStop && tone != Tone.ACUTE && tone != Tone.DOT) return false
-        }
-        return true
-    }
-
-    /**
-     * Determine tone mark position with initial onset prefix preprocessing (e.g. qu, gi).
+     * Determine tone mark position with onset prefix preprocessing (qu/gi).
      */
     fun findTonePosition(onset: CharSequence, rime: CharSequence, oldTonePlacement: Boolean): Int? {
         val onsetLen = onset.length
@@ -361,36 +296,23 @@ private val BASE_VOWELS = setOf(
         var rimeStart = 0
         var offset = 0
 
-        // Zero-allocation preprocessing for onset prefix: qu / gi
         if (rimeLen > 1 && onsetLen > 0) {
             val rimeFirst = rime[0]
             val isRimeFirstU = rimeFirst == 'u' || rimeFirst == 'U'
             val isRimeFirstI = rimeFirst == 'i' || rimeFirst == 'I'
-
             val isQ = (onset[onsetLen - 1] == 'q' || onset[onsetLen - 1] == 'Q') ||
                     (onsetLen >= 2 && (onset[onsetLen - 2] == 'q' || onset[onsetLen - 2] == 'Q') && (onset[onsetLen - 1] == 'u' || onset[onsetLen - 1] == 'U'))
             val isG = (onset[onsetLen - 1] == 'g' || onset[onsetLen - 1] == 'G') ||
                     (onsetLen >= 2 && (onset[onsetLen - 2] == 'g' || onset[onsetLen - 2] == 'G') && (onset[onsetLen - 1] == 'i' || onset[onsetLen - 1] == 'I'))
-
-            if (isRimeFirstU && isQ) {
-                rimeStart = 1
-                offset = 1
-            } else if (isRimeFirstI && isG) {
-                rimeStart = 1
-                offset = 1
-            }
+            if (isRimeFirstU && isQ) { rimeStart = 1; offset = 1 }
+            else if (isRimeFirstI && isG) { rimeStart = 1; offset = 1 }
         }
 
-        val node = findNode(rime, rimeStart, rimeLen - rimeStart)
-        if (node == -1) return null
-
-        val basePos = if (oldTonePlacement) TRIE_TONE_POS_OLD[node].toInt() else TRIE_TONE_POS_NEW[node].toInt()
+        val key = rime.subSequence(rimeStart, rimeLen).toString().lowercase()
+        val info = RIMES[key] ?: return null
+        val basePos = if (oldTonePlacement) info.tonePosOld else info.tonePosNew
         return basePos + offset
     }
-
-    // ==========================================
-    // ONSET & CODA PHONOLOGICAL RULES (0-ALLOC)
-    // ==========================================
 
     @Suppress("NOTHING_TO_INLINE")
     private inline fun toLower(c: Char): Char =
@@ -442,9 +364,6 @@ private val BASE_VOWELS = setOf(
         return false
     }
 
-    /**
-     * Validate whether a tone is grammatically allowed on a specific rime (0 Alloc).
-     */
     fun isValidToneForRime(rime: CharSequence, tone: Tone, start: Int = 0, length: Int = rime.length - start): Boolean {
         if (tone == Tone.NONE) return true
         if (length == 0) return true
@@ -454,9 +373,6 @@ private val BASE_VOWELS = setOf(
         return true
     }
 
-    /**
-     * Check if a complete word is phonologically valid in Vietnamese.
-     */
     fun isValidWord(word: String): Boolean {
         if (word.isEmpty()) return false
         val stripped = VietnameseUnicode.stripToneFromWord(word)
@@ -470,78 +386,6 @@ private val BASE_VOWELS = setOf(
         }
         return isValidRime(stripped, 0, len)
     }
-
-    /**
-     * Build the Trie containing all standard and raw Vietnamese rimes using data-driven combinations.
-     */
-    private fun buildRimeTrie() {
-        val codasAll = arrayOf("c", "ch", "p", "t", "m", "n", "ng", "nh")
-        val codasStandard = arrayOf("c", "p", "t", "m", "n", "ng")
-        val codasDental = arrayOf("t", "ch", "n", "nh")
-        val codasLabialDental = arrayOf("p", "t", "ch", "n", "nh")
-
-        fun insertNucleusWithCodas(nucleus: String, codas: Array<String>, tonePos: Int) {
-            for (coda in codas) {
-                val isStop = coda == "c" || coda == "ch" || coda == "p" || coda == "t"
-                insertRime(nucleus + coda, tonePos, tonePos, isStopCoda = isStop, canTakeCoda = false)
-            }
-        }
-
-        // 1. Single vowels (Bare tone: 0, 0 | with Coda: 0, 0)
-        insertRime("a", 0, 0, canTakeCoda = true); insertNucleusWithCodas("a", codasAll, 0)
-        insertRime("ă", 0, 0, canTakeCoda = true); insertNucleusWithCodas("ă", codasStandard, 0)
-        insertRime("â", 0, 0, canTakeCoda = true); insertNucleusWithCodas("â", codasStandard, 0)
-        insertRime("e", 0, 0, canTakeCoda = true); insertNucleusWithCodas("e", codasAll, 0)
-        insertRime("ê", 0, 0, canTakeCoda = true); insertNucleusWithCodas("ê", codasAll, 0)
-        insertRime("i", 0, 0, canTakeCoda = true); insertNucleusWithCodas("i", codasAll, 0)
-        insertRime("o", 0, 0, canTakeCoda = true); insertNucleusWithCodas("o", codasStandard, 0)
-        insertRime("ô", 0, 0, canTakeCoda = true); insertNucleusWithCodas("ô", codasStandard, 0)
-        insertRime("ơ", 0, 0, canTakeCoda = true); insertNucleusWithCodas("ơ", codasStandard, 0)
-        insertRime("u", 0, 0, canTakeCoda = true); insertNucleusWithCodas("u", codasStandard, 0)
-        insertRime("ư", 0, 0, canTakeCoda = true); insertNucleusWithCodas("ư", codasStandard, 0)
-        insertRime("y", 0, 0, canTakeCoda = true); insertNucleusWithCodas("y", codasDental, 0)
-
-        // 2. Open diphthongs with style variation when bare (Bare: new=1, old=0 | with Coda: 1, 1)
-        insertRime("oa", 1, 0, canTakeCoda = true); insertNucleusWithCodas("oa", codasAll, 1)
-        insertRime("oă", 1, 0, canTakeCoda = true); insertNucleusWithCodas("oă", codasStandard, 1)
-        insertRime("oe", 1, 0, canTakeCoda = true); insertNucleusWithCodas("oe", codasStandard, 1)
-        insertRime("ue", 1, 0, canTakeCoda = true); insertNucleusWithCodas("ue", codasAll, 1)
-        insertRime("uy", 1, 0, canTakeCoda = true); insertNucleusWithCodas("uy", codasLabialDental, 1)
-
-        // 3. Compound diphthongs (Tone: 1, 1 | with Coda: 1, 1)
-        insertRime("uâ", 1, 1, canTakeCoda = true); insertNucleusWithCodas("uâ", codasStandard, 1)
-        insertRime("uê", 1, 1, canTakeCoda = true); insertNucleusWithCodas("uê", codasDental, 1)
-        insertRime("uô", 1, 1, canTakeCoda = true); insertNucleusWithCodas("uô", codasStandard, 1)
-        insertRime("uo", 1, 1, canTakeCoda = true); insertNucleusWithCodas("uo", codasStandard, 1)
-        insertRime("ua", 0, 0, canTakeCoda = true); insertNucleusWithCodas("ua", codasStandard, 1)
-        insertRime("ưa", 0, 0, canTakeCoda = false)
-        insertRime("uơ", 1, 1, canTakeCoda = false)
-        insertRime("ươ", 1, 1, canTakeCoda = true); insertNucleusWithCodas("ươ", codasStandard, 1)
-        insertRime("ia", 0, 0, canTakeCoda = false)
-        insertRime("ie", 1, 1, canTakeCoda = true); insertNucleusWithCodas("ie", codasStandard, 1)
-        insertRime("iê", 1, 1, canTakeCoda = true); insertNucleusWithCodas("iê", codasStandard, 1)
-        insertRime("ye", 1, 1, canTakeCoda = true); insertNucleusWithCodas("ye", arrayOf("t", "m", "n", "ng"), 1)
-        insertRime("yê", 1, 1, canTakeCoda = true); insertNucleusWithCodas("yê", arrayOf("t", "m", "n", "ng"), 1)
-        insertRime("oo", 1, 1, canTakeCoda = true); insertNucleusWithCodas("oo", arrayOf("c", "n", "ng", "m", "p", "t"), 1)
-
-        // 4. Triphthong nuclei (Tone: 2, 2 | with Coda: 2, 2)
-        insertRime("uye", 2, 2, canTakeCoda = true); insertNucleusWithCodas("uye", codasAll, 2)
-        insertRime("uyê", 2, 2, canTakeCoda = true); insertNucleusWithCodas("uyê", codasAll, 2)
-
-        // 5. Offglides (Tone: 0, 0)
-        val simpleOffglides = arrayOf(
-            "ai", "ao", "au", "ay", "âu", "ây", "eo", "eu", "êu", "iu", "oi", "ôi", "ơi", "ui", "uu", "ưu", "ưi"
-        )
-        for (r in simpleOffglides) insertRime(r, 0, 0)
-
-        // 6. Compound & Triphthong Offglides (Tone: 1, 1)
-        val compoundOffglides = arrayOf(
-            "ieu", "iêu", "yeu", "yêu", "uoi", "uôi", "uơi", "uou", "uya", "uyu", "ươi", "ươu",
-            "oai", "oao", "oay", "oeo", "uau", "uay", "uâu", "uây", "ueu", "uêu"
-        )
-        for (r in compoundOffglides) insertRime(r, 1, 1)
-    }
-
     // ============================================================
     // SECTION 3: SPELLING GUIDE (fold/unfold, tone placement)
     // ============================================================

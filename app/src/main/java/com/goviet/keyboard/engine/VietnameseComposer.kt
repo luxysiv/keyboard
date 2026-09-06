@@ -524,10 +524,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             return false
         }
 
-        // Single trie walk: validate rime + tone + get node for position lookup
+        // Validate rime + tone in a single flat-map lookup
         val currentRime = state.nucleus + state.coda
-        val rimeNode = VietnamesePhonology.validateRimeAndFindNode(currentRime)
-        if (!VietnamesePhonology.isRimeNodeValidForTone(rimeNode, targetTone)) {
+        if (!VietnamesePhonology.isRimeValidForTone(currentRime, targetTone)) {
             return false
         }
 
