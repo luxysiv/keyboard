@@ -67,119 +67,30 @@ private val BASE_VOWELS = setOf(
 
 
     // ============================================================
-    // SECTION 2: FLAT MAP RIME DATA (rime validation, tone placement)
+    // SECTION 2: ZERO-GC FLAT MAP RIME DATA (validation, tone placement)
     // ============================================================
 
     /**
-     * Rime specification: tone position, stop-coda flag, and coda-taking capability.
-     * Stored in a flat HashMap — no trie traversal, no per-char child arrays.
+     * Rime validation and tone placement are delegated to [RimeMap] — a sorted
+     * LongArray + binary search backed by 64-bit FNV-1a hashes.  All lookups are
+     * primitive (no HashMap boxing, no String allocation) so the composer hot path
+     * stays garbage-free on low-end Unisoc / Cortex-A53 devices.
      */
-    private data class RimeInfo(
-        val tonePosNew: Int,
-        val tonePosOld: Int,
-        val isStopCoda: Boolean = false,
-        val canTakeCoda: Boolean = false
-    )
-
-    /**
-     * All valid Vietnamese rimes (nucleus + optional coda).
-     * Keys are lowercase.  Includes bare nuclei (with canTakeCoda=true for
-     * nucleus-only states during Telex input) and complete nucleus+coda rimes.
-     *
-     * Data source: buildRimeTrie() preserved 1-to-1 for behaviour parity.
-     */
-    private val RIMES: Map<String, RimeInfo> = buildMap {
-        val codasAll = listOf("c", "ch", "p", "t", "m", "n", "ng", "nh")
-        val codasStandard = listOf("c", "p", "t", "m", "n", "ng")
-        val codasDental = listOf("t", "ch", "n", "nh")
-        val codasLabialDental = listOf("p", "t", "ch", "n", "nh")
-
-        fun add(rime: String, new: Int, old: Int = new, stop: Boolean = false) {
-            put(rime, RimeInfo(new, old, stop))
-        }
-        fun addNucleus(nucleus: String, codas: List<String>, new: Int, old: Int = new) {
-            put(nucleus, RimeInfo(new, old, canTakeCoda = true))
-            for (c in codas) {
-                val isStop = c == "c" || c == "ch" || c == "p" || c == "t"
-                put(nucleus + c, RimeInfo(new, old, isStop))
-            }
-        }
-
-        // Single vowels
-        addNucleus("a",  codasAll, 0)
-        addNucleus("ă",  codasStandard, 0)
-        addNucleus("â",  codasStandard, 0)
-        addNucleus("e",  codasAll, 0)
-        addNucleus("ê",  codasAll, 0)
-        addNucleus("i",  codasAll, 0)
-        addNucleus("o",  codasStandard, 0)
-        addNucleus("ô",  codasStandard, 0)
-        addNucleus("ơ",  codasStandard, 0)
-        addNucleus("u",  codasStandard, 0)
-        addNucleus("ư",  codasStandard, 0)
-        addNucleus("y",  codasDental, 0)
-
-        // Open diphthongs (style-variant: bare old=0, coda old=1)
-        addNucleus("oa",  codasAll, 1, 0)
-        addNucleus("oă",  codasStandard, 1, 0)
-        addNucleus("oe",  codasStandard, 1, 0)
-        addNucleus("ue",  codasAll, 1, 0)
-        addNucleus("uy",  codasLabialDental, 1, 0)
-
-        // Compound diphthongs
-        addNucleus("uâ",  codasStandard, 1, 1)
-        addNucleus("uê",  codasDental, 1, 1)
-        addNucleus("uô",  codasStandard, 1, 1)
-        addNucleus("uo",  codasStandard, 1, 1)
-        addNucleus("ua",  codasStandard, 0, 0) // tone pos handled by computeTonePos in determineTonePosition
-        add("ưa", 0, 0) // bare only — cannot take coda
-        add("uơ", 1, 1) // bare only
-        addNucleus("ươ",  codasStandard, 1, 1)
-
-        // Raw Telex nuclei (needed during live Telex input)
-        add("ia", 0, 0) // bare only
-        addNucleus("ie",  codasStandard, 1, 1)
-        addNucleus("iê",  codasStandard, 1, 1)
-        addNucleus("ye",  listOf("t", "m", "n", "ng"), 1, 1)
-        addNucleus("yê",  listOf("t", "m", "n", "ng"), 1, 1)
-        addNucleus("oo",  listOf("c", "n", "ng", "m", "p", "t"), 1, 1)
-
-        // Triphthong nuclei
-        addNucleus("uye",  codasAll, 2, 2)
-        addNucleus("uyê",  codasAll, 2, 2)
-
-        // Simple offglides (bare — no coda variants, tone pos 0)
-        for (r in listOf("ai", "ao", "au", "ay", "âu", "ây", "eo", "eu", "êu",
-                         "iu", "oi", "ôi", "ơi", "ui", "uu", "ưi")) {
-            put(r, RimeInfo(0, 0))
-        }
-
-        // Compound & triphthong offglides (tone pos 1)
-        for (r in listOf("ieu", "iêu", "yeu", "yêu", "uoi", "uôi", "uơi", "uou",
-                         "uya", "uyu", "ươi", "ươu", "oai", "oao", "oay", "oeo",
-                         "uau", "uay", "uâu", "uây", "ueu", "uêu")) {
-            put(r, RimeInfo(1, 1))
-        }
-    }
-
-    /**
-     * All valid prefixes of rimes in [RIMES].  Includes every leading substring
-     * of every RIMES key (both bare nuclei and complete rimes).  Used for
-     * incremental prefix validation during typing.
-     */
-    private val PREFIXES: Set<String> = buildSet {
-        for (k in RIMES.keys) {
-            for (i in 1 until k.length) add(k.substring(0, i))
-        }
-    }
 
     /**
      * Check if [candidate] (a substring) is a valid prefix of any Vietnamese rime.
      */
     fun isValidPrefix(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
         if (length == 0) return true
-        val key = candidate.subSequence(start, start + length).toString().lowercase()
-        return key in PREFIXES || key in RIMES
+        return RimeMap.isValidPrefix(RimeMap.hash(candidate, start, length))
+    }
+
+    /**
+     * Check if a rime formed by concatenating [a] (first [aLen] chars) and [b]
+     * (first [bLen] chars) is a valid prefix.  Zero allocation on the hot path.
+     */
+    fun isValidPrefixCat(a: CharSequence, aLen: Int, b: CharSequence, bLen: Int): Boolean {
+        return RimeMap.isValidPrefix(RimeMap.hashCat(a, aLen, b, bLen))
     }
 
     /**
@@ -187,8 +98,7 @@ private val BASE_VOWELS = setOf(
      */
     fun isCompleteRime(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
         if (length == 0) return false
-        val key = candidate.subSequence(start, start + length).toString().lowercase()
-        return key in RIMES
+        return RimeMap.isComplete(RimeMap.hash(candidate, start, length))
     }
 
     fun isValidRime(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean =
@@ -196,20 +106,15 @@ private val BASE_VOWELS = setOf(
 
     fun isStopCoda(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
         if (length == 0) return false
-        val key = candidate.subSequence(start, start + length).toString().lowercase()
-        val info = RIMES[key]
-        if (info != null) return info.isStopCoda
-        // Fallback: check last characters directly
-        val lastChar = key[key.length - 1]
-        return lastChar == 'p' || lastChar == 't' || lastChar == 'c' ||
-                (key.length >= 2 && lastChar == 'h' && key[key.length - 2] == 'c')
+        return RimeMap.isStop(RimeMap.hash(candidate, start, length))
     }
 
     fun getTonePosition(candidate: CharSequence, oldTonePlacement: Boolean, start: Int = 0, length: Int = candidate.length - start): Int {
         if (length == 0) return 0
-        val key = candidate.subSequence(start, start + length).toString().lowercase()
-        val info = RIMES[key] ?: return 0
-        return if (oldTonePlacement) info.tonePosOld else info.tonePosNew
+        val h = RimeMap.hash(candidate, start, length)
+        val i = RimeMap.indexOf(h)
+        if (i < 0) return 0
+        return if (oldTonePlacement) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
     }
 
     // ============================================================
@@ -222,11 +127,14 @@ private val BASE_VOWELS = setOf(
      */
     fun isRimeValidForTone(rime: String, tone: Tone): Boolean {
         if (rime.isEmpty()) return false
-        val key = rime.lowercase()
-        val info = RIMES[key] ?: return false
-        if (tone != Tone.NONE && info.isStopCoda && tone != Tone.ACUTE && tone != Tone.DOT) return false
-        return true
+        return RimeMap.isToneAllowed(RimeMap.hash(rime), tone.index)
     }
+
+    /**
+     * Validate that a rime (defined by its precomputed hash) is valid for a specific tone.
+     */
+    fun isRimeHashValidForTone(hash: Long, tone: Tone): Boolean =
+        RimeMap.isToneAllowed(hash, tone.index)
 
     /**
      * Determine tone mark position with onset prefix preprocessing (qu/gi).
@@ -251,11 +159,13 @@ private val BASE_VOWELS = setOf(
             else if (isRimeFirstI && isG) { rimeStart = 1; offset = 1 }
         }
 
-        val key = rime.subSequence(rimeStart, rimeLen).toString().lowercase()
-        val info = RIMES[key] ?: return null
-        val basePos = if (oldTonePlacement) info.tonePosOld else info.tonePosNew
+        val h = RimeMap.hash(rime, rimeStart, rimeLen - rimeStart)
+        val i = RimeMap.indexOf(h)
+        if (i < 0) return null
+        val basePos = if (oldTonePlacement) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
         return basePos + offset
     }
+
 
     @Suppress("NOTHING_TO_INLINE")
     private inline fun toLower(c: Char): Char =
@@ -678,87 +588,23 @@ private val BASE_VOWELS = setOf(
     private fun keyCharUpper(t: VietnameseComposer.TargetType): Char = keyChar(t).uppercaseChar()
 
     // ============================================================
-    // TONE PLACEMENT — data-driven nucleus-position table
+    // TONE PLACEMENT — delegates to RimeMap (zero-GC)
     // ============================================================
 
     /**
-     * Maps each rime (nucleus+coda) to the character index where the tone mark lands.
-     *
-     * Index semantics:
-     *  - pos 0 → tone on the FIRST vowel (head vowel)
-     *  - pos 1 → tone on the SECOND vowel (main/rhyming vowel)
-     *  - pos 2 → tone on the THIRD vowel
-     *
-     * Single vowels always get pos 0.
-     * Compound nuclei (iê, uô, ươ, ...) get pos 1 (the main vowel is the 2nd char).
-     * Triple nuclei (uye, uyê) get pos 2.
-     * STYLE_VARIANT_RIMES (oa, oă, oe, ue, uy) differ between LEGACY and MODERN.
-     */
-    private val STYLE_VARIANT_RIMES = setOf("oa", "oă", "oe", "ue", "uy")
-
-    /**
-     * All bare Vietnamese nuclei (no coda). Used to distinguish bare nuclei from
-     * coda forms (e.g. "oa" is a bare nucleus, "oan" is a coda form).
-     */
-    private val BARE_NUCLEI = setOf(
-        "a", "ă", "â", "e", "ê", "i", "o", "ô", "ơ", "u", "ư", "y",
-        "ua", "ưa", "ia",
-        "uâ", "uê", "uô", "uơ", "ươ",
-        "ie", "iê", "ye", "yê", "oo", "uo", "oa", "oă", "oe", "ue", "uy",
-        "ieu", "yêu", "yeu",
-        "uôi", "uơi", "uou", "uya", "uyu", "ươi", "ươu",
-        "oai", "oao", "oay", "oeo", "uau", "uay", "uâu", "uây",
-        "ueu", "uêu", "uye", "uyê"
-    )
-
-    /**
-     * Computes tone position for a bare nucleus (no coda) using phonological rules.
-     *
-     * Rules (derived from Vietnamese phonology):
-     *  - Single vowel: pos 0 (tone on the vowel itself)
-     *  - Head-vowel nuclei (ua, ưa, ia): pos 0
-     *  - Compound/triple nuclei: pos 1 (rhyming vowel is 2nd char)
-     *  - Triple nuclei uye/uyê: pos 2
-     *
-     * This replaces the old NUCLEUS_POSITIONS lookup table with a computed function.
-     */
-    private fun computeTonePos(nucleus: String): Int = when {
-        nucleus.length == 1 -> 0
-        nucleus == "ua" || nucleus == "ưa" || nucleus == "ia" -> 0
-        nucleus == "uye" || nucleus == "uyê" -> 2
-        else -> 1
-    }
-
-    /**
      * Determines the character index within [rime] where the tone mark lands.
-     * This is the ONE function all tone logic calls.
-     *
      * [rime] = nucleus + coda (e.g. "oan" for hoàn, "iêng" for tiếng).
-     * The caller must concatenate nucleus and coda before calling this function.
      *
-     * Lookup order:
-     *  1. STYLE_VARIANT_RIMES → style-dependent (LEGACY=0, MODERN=1)
-     *  2. computeTonePos() for bare nuclei (whitelist-checked)
-     *  3. Trie fallback (for coda forms not covered by the above)
+     * Pure RimeMap hash lookup — no branching, no String allocation, no
+     * intermediate STYLE_VARIANT_RIMES or BARE_NUCLEI sets.  The RimeMap
+     * encodes all tone positions (legacy + modern) in its primitive arrays.
      */
     fun determineTonePosition(rime: String, onset: String, placement: TonePlacement): Int {
         if (rime.isEmpty()) return 0
-
-        val lc = rime.lowercase()
-
-        // 1. Style-variant bare rimes (coda forms handled by trie)
-        if (lc in STYLE_VARIANT_RIMES) {
-            return if (placement == TonePlacement.LEGACY) 0 else 1
-        }
-
-        // 2. Computed tone position for bare nuclei (whitelist-checked to avoid
-        //    misrouting 3-char coda forms like "ang", "anh", "ong" to computeTonePos)
-        if (lc in BARE_NUCLEI) {
-            return computeTonePos(lc)
-        }
-
-        // 3. Fallback: trie handles coda forms (oan, iên, oang, etc.)
-        val findOld = (placement == TonePlacement.LEGACY)
-        return VietnamesePhonology.findTonePosition(onset, rime, findOld) ?: 0
+        val h = RimeMap.hash(rime)
+        val i = RimeMap.indexOf(h)
+        if (i < 0) return 0
+        return if (placement == TonePlacement.LEGACY) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
     }
+
 }
