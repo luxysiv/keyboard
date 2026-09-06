@@ -162,6 +162,18 @@ class BackspaceHandler(
                 return
             }
 
+            // If the caret sits inside a Vietnamese word, adopt the prefix before
+            // the caret as the preedit first (underline from the whitespace up to
+            // the caret) so backspace deletes a complete letter inside the preedit.
+            // This keeps the behavior identical regardless of whether the editor
+            // reported the caret move through onUpdateSelection.
+            controller.adoptPrefixAtCaret(ic)
+            if (controller.composingRaw.isNotEmpty()) {
+                performComposingBackspace(ic)
+                controller.service.evaluateAutoShift()
+                return
+            }
+
             // Committed text, Gboard/Laban style: remove the whole preceding
             // Unicode grapheme cluster ('á' -> "", 'nguyễn' -> 'nguyễ').
             deleteLastGraphemeOrChar(ic)

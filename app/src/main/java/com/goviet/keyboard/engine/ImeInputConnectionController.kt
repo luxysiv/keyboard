@@ -244,8 +244,10 @@ class ImeInputConnectionController(
         // preedit immediately (Gboard/Unikey style): the underline covers the
         // prefix before the caret ("tha" in "tha|y") without waiting for a key.
         val ic = service.currentInputConnection
-        if (ic != null) {
-            maybeAdoptPrefixAtCaret(ic)
+        // Only a deliberate caret move starts the adoption; our recent keystrokes
+        // or the caret jump right after a space-commit must not underline the word.
+        if (ic != null && System.currentTimeMillis() - lastKeyPressTime >= 350L) {
+            adoptPrefixAtCaret(ic)
         }
     }
 
@@ -254,22 +256,27 @@ class ImeInputConnectionController(
      * into the middle of a word. The composing region then spans only [start, prefix)
      * — the remainder of the word stays committed outside — so the caret keeps its
      * exact position and every later edit (typing, backspace, delete) happens on
-     * the display text through one unified path.
+     * the display text through one unified path. Public so backspace can also ask
+     * for the adoption when an editor does not report the tap via onUpdateSelection.
      */
-    private fun maybeAdoptPrefixAtCaret(ic: InputConnection) {
+    fun adoptPrefixAtCaret(ic: InputConnection) {
         if (composingRaw.isNotEmpty()) return
         if (userSelectedText) return
         if (service._languageMode.value == "ENG" || isBypassVietnameseComposing()) return
 
         val word = findWordAroundCursor(ic) ?: return
+        if (word.text.isEmpty()) return
         val offset = word.cursorOffset
-        // Only the middle of a word (text exists both before and after the caret).
-        if (offset <= 0 || offset >= word.text.length) return
+        // The underlined region always runs from the whitespace before the word up
+        // to the caret ("tha" in "tha|y", the whole word at the end, nothing at 0).
+        if (offset <= 0) return
         if (word.startInEditor < 0 || word.endInEditor <= word.startInEditor) return
         if (word.endInEditor - word.startInEditor != word.text.length) return
 
         val prefix = word.text.substring(0, offset)
-        if (prefix.isEmpty() || !EditedVietnameseRecognizer.canRecompose(prefix)) return
+        // The whole word must look Vietnamese (e.g. "thay"/"thấy"); foreign words
+        // like "confirm" must never be converted to a Telex preedit.
+        if (!EditedVietnameseRecognizer.canRecompose(word.text)) return
         val adopt = inputEngine.adoptWord(prefix) ?: return
         if (!adopt.isValid) return
         if (compileText(adopt.canonicalRaw) != prefix) return
