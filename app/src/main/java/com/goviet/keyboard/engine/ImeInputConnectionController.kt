@@ -239,6 +239,50 @@ class ImeInputConnectionController(
                 clearState()
             }
         }
+
+        // 4. Tapping into the middle of an existing Vietnamese word starts the
+        // preedit immediately (Gboard/Unikey style): the underline covers the
+        // prefix before the caret ("tha" in "tha|y") without waiting for a key.
+        val ic = service.currentInputConnection
+        if (ic != null) {
+            maybeAdoptPrefixAtCaret(ic)
+        }
+    }
+
+    /**
+     * Adopts the Vietnamese prefix before the caret right away when the user taps
+     * into the middle of a word. The composing region then spans only [start, prefix)
+     * — the remainder of the word stays committed outside — so the caret keeps its
+     * exact position and every later edit (typing, backspace, delete) happens on
+     * the display text through one unified path.
+     */
+    private fun maybeAdoptPrefixAtCaret(ic: InputConnection) {
+        if (composingRaw.isNotEmpty()) return
+        if (userSelectedText) return
+        if (service._languageMode.value == "ENG" || isBypassVietnameseComposing()) return
+
+        val word = findWordAroundCursor(ic) ?: return
+        val offset = word.cursorOffset
+        // Only the middle of a word (text exists both before and after the caret).
+        if (offset <= 0 || offset >= word.text.length) return
+        if (word.startInEditor < 0 || word.endInEditor <= word.startInEditor) return
+        if (word.endInEditor - word.startInEditor != word.text.length) return
+
+        val prefix = word.text.substring(0, offset)
+        if (prefix.isEmpty() || !EditedVietnameseRecognizer.canRecompose(prefix)) return
+        val adopt = inputEngine.adoptWord(prefix) ?: return
+        if (!adopt.isValid) return
+        if (compileText(adopt.canonicalRaw) != prefix) return
+
+        composingStartInEditor = word.startInEditor
+        composingRaw.clear()
+        composingRaw.append(adopt.canonicalRaw)
+        composingCursorIndex = adopt.canonicalRaw.length
+        isVietnamese = true
+        inputEngine.replayRawToState(adopt.canonicalRaw, composingState)
+        lastSetComposingText = prefix
+        ic.setComposingRegion(word.startInEditor, word.startInEditor + prefix.length)
+        userMovedCursor = false
     }
 
     fun mapDisplayOffsetToRawCursor(raw: String, display: String, displayOffset: Int): Int {
@@ -796,6 +840,27 @@ class ImeInputConnectionController(
 
     /** Display caret offset (chars) for the current raw caret. */
     fun displayCursorIndex(): Int = compilePrefixDisplay(composingRaw, composingCursorIndex.coerceIn(0, composingRaw.length)).length
+
+    /**
+     * Maps a display offset back to the raw buffer offset. Used after display-level
+     * edits (backspace/delete + re-adoption) where the canonical raw no longer maps
+     * 1:1 to display characters (e.g. "â" is one grapheme but two raw keys "aa").
+     */
+    fun rawIndexOfDisplay(
+        raw: CharSequence,
+        display: String,
+        displayOffset: Int,
+        vietnamese: Boolean
+    ): Int {
+        if (displayOffset <= 0) return 0
+        if (displayOffset >= display.length) return raw.length
+        if (!vietnamese) return displayOffset.coerceAtMost(raw.length)
+        val target = display.substring(0, displayOffset)
+        for (i in 0..raw.length) {
+            if (compilePrefixDisplay(raw, i) == target) return i
+        }
+        return displayOffset.coerceAtMost(raw.length)
+    }
 
     fun compileText(raw: String): String {
         if (raw.isEmpty()) return ""

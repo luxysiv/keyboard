@@ -1,19 +1,19 @@
 package com.goviet.keyboard.engine
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 /**
- * Contracts for the replay-based composing backspace.
+ * Contracts for the display-level composing backspace.
  *
- * The preedit is a pure function of the raw keystroke buffer: every backspace
- * deletes exactly one raw keystroke before the caret and re-derives display +
- * live state from the remaining buffer via the same engine replay path used
- * elsewhere. These tests lock that contract so the old snapshot/undo-log
- * behavior (which lost whole adopted words once the log ran dry) cannot
- * silently come back.
+ * Backspace/delete edit the *displayed* text, one complete letter (grapheme
+ * cluster) at a time — exactly like committed text and like the big keyboards.
+ * The surviving display is re-adopted to canonical Telex raw keystrokes so
+ * typing continues seamlessly. These tests lock that contract so raw-keystroke
+ * deletion or snapshot-style undo stacks cannot silently come back.
  */
 class BackspaceReplayTest {
 
@@ -26,28 +26,37 @@ class BackspaceReplayTest {
     }
 
     @Test
-    fun adoptedWordSurvivesThreeConsecutiveBackspaces() {
-        // User types "thay", commits with space, taps into the word, then types
-        // 'a' and 's' -> raw "thayas" renders as "thấy".
-        val raw = StringBuilder("thayas")
-        assertEquals("thấy", engine.process(raw.toString()))
+    fun backspaceDeletesCompleteGraphemesNotRawKeystrokes() {
+        // "thấy" = [t][h][ấ][y]. Backspace removes one complete letter each time:
+        // thấy -> thấ -> th -> t -> "" (never thây -> thay, which is raw Telex undo).
+        var display = "thấy"
+        assertEquals("thấ", backspaceGrapheme(display))
+        assertEquals("th", backspaceGrapheme("thấ"))
+        assertEquals("t", backspaceGrapheme("th"))
+        assertEquals("", backspaceGrapheme("t"))
+    }
 
-        // Backspaces keep draining exactly one raw keystroke per press and never
-        // blow away the previously committed word ("thay" -> "" in one step).
-        raw.deleteCharAt(raw.length - 1)
-        assertEquals("thây", engine.process(raw.toString()))
-        raw.deleteCharAt(raw.length - 1)
-        assertEquals("thay", engine.process(raw.toString()))
-        raw.deleteCharAt(raw.length - 1)
-        assertEquals("tha", engine.process(raw.toString()))
-
-        // Draining to the end is gradual all the way down.
-        raw.deleteCharAt(raw.length - 1)
-        assertEquals("th", engine.process(raw.toString()))
-        raw.deleteCharAt(raw.length - 1)
-        assertEquals("t", engine.process(raw.toString()))
-        raw.deleteCharAt(raw.length - 1)
-        assertEquals("", engine.process(raw.toString()))
+    @Test
+    fun displayBackspaceReSyncsCanonicalRaw() {
+        // After a grapheme backspace the surviving display is re-adopted to
+        // canonical Telex raw so the next keystroke continues correctly.
+        val steps = mapOf(
+            "thấy" to "thaays",
+            "thấ" to "thaas",
+            "thâ" to "thaa",
+            "tha" to "tha",
+            "th" to "th",
+            "t" to "t",
+            "thươn" to "thuown",
+            "toá" to "toas"
+        )
+        for ((display, canonical) in steps) {
+            val adopt = engine.adoptWord(display)
+            assertNotNull("'$display' must be re-adoptable", adopt)
+            assertTrue("'$display' must be valid", adopt!!.isValid)
+            assertEquals("canonical raw for '$display'", canonical, adopt.canonicalRaw)
+            assertEquals("round-trip for '$display'", display, engine.process(adopt.canonicalRaw))
+        }
     }
 
     @Test
@@ -82,6 +91,12 @@ class BackspaceReplayTest {
         // Typing 's' finishes the edit (view: "thấ" + committed "y" = "thấy").
         assertEquals("thấ", engine.process("thaas"))
     }
+}
+
+private fun backspaceGrapheme(display: String): String {
+    if (display.isEmpty()) return ""
+    val start = GraphemeEditor.previousBoundary(display, display.length)
+    return display.substring(0, start)
 }
 
 /** The literal insertion path used by the controller (Telex kernel is bypassed). */
