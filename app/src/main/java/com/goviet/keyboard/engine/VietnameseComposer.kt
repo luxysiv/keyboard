@@ -294,7 +294,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 if (remLower.startsWith(cand)) {
                     val candidateRime = nucleus.lowercase() + cand
                     if (VietnamesePhonology.isValidPrefix(candidateRime) &&
-                        VietnamesePhonology.isValidToneForRime(candidateRime, detectedTone)) {
+                        VietnamesePhonology.isRimeValidForTone(candidateRime.lowercase(), detectedTone)) {
                         coda = remainingAfterNucleus.substring(0, cand.length)
                         rawSuffix = remainingAfterNucleus.substring(cand.length)
                         matchedCoda = true
@@ -317,7 +317,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             onset.isNotEmpty() && coda.isEmpty()
         } else {
             VietnamesePhonology.isValidPrefix(rimeKey) &&
-            VietnamesePhonology.isValidToneForRime(rimeKey, validTone)
+            VietnamesePhonology.isRimeValidForTone(rimeKey, validTone)
         }
         val isValid = validSuffix.isEmpty() && isValidRimeOrPrefix
 
@@ -708,9 +708,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             effectiveNucleus = VietnamesePhonology.buildUoPair(effectiveNucleus[0], effectiveNucleus[1], hornU = true)
         }
 
-        // Single-pass validation: coda validity + rime validity + tone validity
+        // Validate: coda chars + rime existence + tone allowed
         val candidateCoda = state.coda + c
-        if (VietnamesePhonology.validateCodaAddition(effectiveNucleus, candidateCoda, state.tone)) {
+        val newRimeKey = effectiveNucleus.lowercase() + candidateCoda.lowercase()
+        if (VietnamesePhonology.isValidCoda(candidateCoda) &&
+            VietnamesePhonology.isValidPrefix(newRimeKey) &&
+            VietnamesePhonology.isRimeValidForTone(newRimeKey, state.tone)) {
             state.nucleus = effectiveNucleus
             state.coda = candidateCoda
             state.lastToggle = null

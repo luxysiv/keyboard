@@ -194,12 +194,6 @@ private val BASE_VOWELS = setOf(
     fun isValidRime(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean =
         isCompleteRime(candidate, start, length)
 
-    fun canTakeCoda(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
-        if (length == 0) return false
-        val key = candidate.subSequence(start, start + length).toString().lowercase()
-        return RIMES[key]?.canTakeCoda ?: false
-    }
-
     fun isStopCoda(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
         if (length == 0) return false
         val key = candidate.subSequence(start, start + length).toString().lowercase()
@@ -223,44 +217,6 @@ private val BASE_VOWELS = setOf(
     // ============================================================
 
     /**
-     * Validate a coda addition in a single pass:
-     * coda legality + rime validity + tone validity.
-     */
-    fun validateCodaAddition(nucleus: CharSequence, coda: CharSequence, tone: Tone): Boolean {
-        if (coda.isEmpty()) return true
-        val codaLen = coda.length
-
-        // Quick coda character check
-        if (codaLen == 1) {
-            val c = toLower(coda[0])
-            if (c != 'm' && c != 'p' && c != 'n' && c != 't' && c != 'c') return false
-        } else if (codaLen == 2) {
-            val c0 = toLower(coda[0])
-            val c1 = toLower(coda[1])
-            val valid = (c0 == 'n' && (c1 == 'g' || c1 == 'h')) || (c0 == 'c' && c1 == 'h')
-            if (!valid) return false
-        } else {
-            return false
-        }
-
-        val nLen = nucleus.length
-        val nucleusKey = nucleus.subSequence(0, nLen).toString().lowercase()
-        val codaKey = coda.subSequence(0, codaLen).toString().lowercase()
-        val fullKey = nucleusKey + codaKey
-
-        // Must be a valid prefix or complete rime
-        if (fullKey !in PREFIXES && fullKey !in RIMES) return false
-
-        // Tone validation: stop-coda restricts to ACUTE/DOT only
-        if (tone != Tone.NONE) {
-            val info = RIMES[fullKey]
-            val isStop = info?.isStopCoda ?: isStopCoda(fullKey, 0, fullKey.length)
-            if (isStop && tone != Tone.ACUTE && tone != Tone.DOT) return false
-        }
-        return true
-    }
-
-    /**
      * Validate that a rime is valid for a specific tone.
      * Used by [VietnameseComposer.handleToneKey].
      */
@@ -271,19 +227,6 @@ private val BASE_VOWELS = setOf(
         if (tone != Tone.NONE && info.isStopCoda && tone != Tone.ACUTE && tone != Tone.DOT) return false
         return true
     }
-
-    // ============================================================
-    // NODE-BASED API (kept for backward compatibility)
-    // ============================================================
-
-    fun validateRimeAndFindNode(rime: CharSequence): Int {
-        val key = rime.toString().lowercase()
-        return if (key in RIMES || key in PREFIXES) 1 else -1
-    }
-
-    fun getTonePosFromNode(node: Int, oldTonePlacement: Boolean): Int = 0
-
-    fun isRimeNodeValidForTone(node: Int, tone: Tone): Boolean = node > 0
 
     /**
      * Determine tone mark position with onset prefix preprocessing (qu/gi).
@@ -362,15 +305,6 @@ private val BASE_VOWELS = setOf(
             return (c0 == 'n' && (c1 == 'g' || c1 == 'h')) || (c0 == 'c' && c1 == 'h')
         }
         return false
-    }
-
-    fun isValidToneForRime(rime: CharSequence, tone: Tone, start: Int = 0, length: Int = rime.length - start): Boolean {
-        if (tone == Tone.NONE) return true
-        if (length == 0) return true
-        if (isStopCoda(rime, start, length)) {
-            return tone == Tone.ACUTE || tone == Tone.DOT
-        }
-        return true
     }
 
     fun isValidWord(word: String): Boolean {
