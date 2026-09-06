@@ -53,7 +53,7 @@ object KeyboardLayout {
                     key.label = key.code
                 }
                 else -> {
-                    key.label = if (shiftState > 0) key.code.uppercase() else key.code
+                    key.label = if (shiftState > 0 && key.code.length == 1) key.code[0].uppercaseChar().toString() else key.code
                     key.secondaryLabel = getSecondaryLabel(key.code, shiftState > 0)
                     key.longPressOptions = getLongPressOptions(key.code, shiftState > 0)
                 }
@@ -219,11 +219,14 @@ object KeyboardLayout {
 
     private fun getSecondaryLabel(letter: String, isShifted: Boolean): String? {
         val label = secondaryKeyMap[letter] ?: return null
-        return if (isShifted) label.uppercase() else label
+        return if (isShifted && label.length == 1) label[0].uppercaseChar().toString() else label
     }
 
     private fun getLongPressOptions(letter: String, isShifted: Boolean): List<String>? {
         val list = longPressSymbolMap[letter] ?: secondaryKeyMap[letter]?.let { listOf(it) } ?: return null
-        return if (isShifted) list.map { it.uppercase() } else list
+        if (!isShifted) return list
+        val out = ArrayList<String>(list.size)
+        for (s in list) out.add(if (s.length == 1) s[0].uppercaseChar().toString() else s.uppercase())
+        return out
     }
 }
