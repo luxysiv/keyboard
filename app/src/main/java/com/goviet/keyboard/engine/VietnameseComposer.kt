@@ -697,8 +697,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // 3. Normal vowel expansion into nucleus (if no coda yet)
         if (state.coda.isEmpty()) {
             // Hash nucleus + new char incrementally — zero allocation
-            val nucHash = RimeMap.hash(state.nucleus)
-            if (VietnamesePhonology.isValidPrefixHash(RimeMap.hashExtend(nucHash, c))) {
+            // MUST use hashRaw (no or 1L) as base for hashExtend
+            val nucRawHash = RimeMap.hashRaw(state.nucleus, 0, state.nucleus.length)
+            if (VietnamesePhonology.isValidPrefixHash(RimeMap.hashExtend(nucRawHash, c))) {
                 state.nucleus = state.nucleus + c
                 state.lastToggle = null
                 return true
@@ -744,8 +745,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             (c0 == 'n' && (cLow == 'g' || cLow == 'h')) || (c0 == 'c' && cLow == 'h')
         } else false
         if (codaValid) {
-            val rimeHash = RimeMap.hashCat(effectiveNucleus, effectiveNucleus.length, state.coda, state.coda.length)
-            val candidateRimeHash = RimeMap.hashExtend(rimeHash, c)
+            // MUST use hashCatRaw (no or 1L) as base for hashExtend
+            val rimeRawHash = RimeMap.hashCatRaw(effectiveNucleus, effectiveNucleus.length, state.coda, state.coda.length)
+            val candidateRimeHash = RimeMap.hashExtend(rimeRawHash, c)
             if (VietnamesePhonology.isValidPrefixHash(candidateRimeHash) &&
                 VietnamesePhonology.isRimeHashValidForTone(candidateRimeHash, state.tone)) {
                 state.nucleus = effectiveNucleus

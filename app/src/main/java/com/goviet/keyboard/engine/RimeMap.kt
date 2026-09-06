@@ -21,6 +21,31 @@ object RimeMap {
     init { build() }
 
     // ── Hash functions (zero allocation) ──────────────────────────
+    //
+    // CRITICAL: hash()/hashCat() apply `or 1L` at the end to avoid hash=0.
+    // hashExtend() takes the RAW intermediate hash (without `or 1L`) and
+    // applies `or 1L` itself.  Always use hashRaw/hashCatRaw as the base
+    // for incremental extension — never pass hash()/hashCat() output to
+    // hashExtend().
+
+    /** Raw intermediate hash — NO `or 1L`. Use as base for hashExtend(). */
+    @JvmStatic @JvmOverloads
+    fun hashRaw(cs: CharSequence, start: Int = 0, length: Int = cs.length - start): Long {
+        var h = FNV_OFF; var i = start; val end = start + length
+        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        return h
+    }
+
+    /** Raw intermediate hash — NO `or 1L`. Use as base for hashExtend(). */
+    @JvmStatic
+    fun hashCatRaw(a: CharSequence, aLen: Int, b: CharSequence, bLen: Int): Long {
+        var h = FNV_OFF; var i = 0
+        while (i < aLen) { h = h xor (a[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        i = 0; while (i < bLen) { h = h xor (b[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        return h
+    }
+
+
 
     @JvmStatic @JvmOverloads
     fun hash(cs: CharSequence, start: Int = 0, length: Int = cs.length - start): Long {
