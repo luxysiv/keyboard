@@ -87,7 +87,7 @@ object EditedVietnameseRecognizer {
     /**
      * A committed word "looks Vietnamese" when it parses as a valid
      * Vietnamese onset + a canonical rime (or a leading part of one).
-     * Backed by the flat [VietnameseRimeTable] instead of the old
+     * Backed by the zero-GC [RimeMap] flat map instead of the old
      * NON_VN_LETTERS heuristic, so foreign words like "warm"/"confirm"
      * are rejected structurally rather than by letter blacklists.
      */
@@ -113,8 +113,8 @@ object EditedVietnameseRecognizer {
 
         // The rime must be a (possibly partial) canonical Vietnamese rime
         // and must contain at least one base vowel.
-        if (!VietnameseRimeTable.isPrefixValid(rime)) return false
-        return rime.any { VietnameseRimeTable.isBaseVowel(it) }
+        if (!RimeMap.isValidPrefix(RimeMap.hash(rime))) return false
+        return rime.any { VietnamesePhonology.isBaseVowel(it) }
     }
 
     fun classify(word: String): CompositionMode {
