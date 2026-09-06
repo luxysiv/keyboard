@@ -35,6 +35,7 @@ class StandardLetterGridView @JvmOverloads constructor(
         set(value) {
             if (field != value) {
                 field = value
+                useVietSpace = (value == "VIE")
                 KeyboardLayout.resolveLabels(keys, shiftState, languageMode, imeOptions, inputType)
                 invalidate()
             }
@@ -85,6 +86,11 @@ class StandardLetterGridView @JvmOverloads constructor(
         parentWidth = { width },
         parentHeight = { height }
     )
+
+    // Pre-allocated CharArrays for space key — zero-GC on onDraw
+    private val spaceVietChars = "Tiếng Việt".toCharArray()
+    private val spaceEngChars = "English".toCharArray()
+    private var useVietSpace = true  // sync with languageMode changes
 
     private val horizontalSpacing = 2.8f * density
     private val verticalSpacing = 7.0f * density
@@ -245,12 +251,12 @@ class StandardLetterGridView @JvmOverloads constructor(
                 KeyboardUtils.drawEnterIcon(canvas, drawRect, imeOptions, inputType, density, textColor)
             }
             key.code == "SPACE" -> {
-                val spaceText = if (languageMode == "VIE") "Tiếng Việt" else "English"
+                val spaceChars = if (useVietSpace) spaceVietChars else spaceEngChars
                 textPaint.textSize = 12.5f * density
                 textPaint.color = subTextColor
                 textPaint.typeface = normalTypeface
                 val baseline = KeyboardUtils.centerBaselineY(drawRect, textPaint)
-                canvas.drawText(spaceText, drawRect.centerX(), baseline, textPaint)
+                canvas.drawText(spaceChars, 0, spaceChars.size, drawRect.centerX(), baseline, textPaint)
 
                 val indicatorW = 36f * density
                 val indicatorH = 2.5f * density
