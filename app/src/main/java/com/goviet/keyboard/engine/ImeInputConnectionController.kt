@@ -385,13 +385,20 @@ class ImeInputConnectionController(
         val wordText         = wordAtCursor?.text ?: ""
         val wordTextLength   = wordText.length
 
-        val adoptResult = if (wordAtCursor != null && EditedVietnameseRecognizer.canRecompose(wordText)) {
-            inputEngine.adoptWord(wordText)
+        val isAtEnd = wordAtCursor != null && wordCursorOffset == wordTextLength
+
+        // Middle-of-word edits adopt only the prefix before the caret (Gboard/Unikey
+        // style): the underline covers the typed part ("tha" in "tha|y"), the rest of
+        // the word stays committed outside the region, and the caret keeps its exact
+        // position instead of jumping to the end of the word.
+        val adoptTarget = if (isAtEnd) wordText else wordText.substring(0, wordCursorOffset)
+
+        val adoptResult = if (adoptTarget.isNotEmpty() && EditedVietnameseRecognizer.canRecompose(adoptTarget)) {
+            inputEngine.adoptWord(adoptTarget)
         } else null
 
         val onsetEnd = adoptResult?.onsetLength ?: 0
         val isAtOrAfterVowel = adoptResult != null && adoptResult.isValid && wordCursorOffset >= onsetEnd + 1
-        val isAtEnd = wordAtCursor != null && wordCursorOffset == wordTextLength
 
         val lowerKey = if (key.isNotEmpty()) key[0].lowercaseChar() else ' '
         val isTone = VietnameseComposer.isToneKey(lowerKey)
@@ -418,7 +425,7 @@ class ImeInputConnectionController(
             // syllable (Unikey/Gboard behaviour), never a divergent interpretation.
             displayBuf.clear()
             inputEngine.compileRaw(canonicalRaw, vietnamese = true, displayBuf)
-            if (displayBuf.toStringVal() != wordText) {
+            if (displayBuf.toStringVal() != adoptTarget) {
                 isVietnamese = true
                 userMovedCursor = false
                 return
@@ -429,8 +436,8 @@ class ImeInputConnectionController(
             composingCursorIndex = canonicalRaw.length
             isVietnamese = true
             inputEngine.replayRawToState(canonicalRaw, composingState)
-            lastSetComposingText = wordText
-            ic.setComposingRegion(wordAtCursor.startInEditor, wordAtCursor.endInEditor)
+            lastSetComposingText = displayBuf.toStringVal()
+            ic.setComposingRegion(wordAtCursor.startInEditor, wordAtCursor.startInEditor + adoptTarget.length)
             userMovedCursor = false
             return
         }

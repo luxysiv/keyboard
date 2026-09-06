@@ -71,6 +71,17 @@ class BackspaceReplayTest {
         raw.deleteCharAt(raw.length - 1)
         assertEquals("confi", engine.literalDisplay(raw.toString()))
     }
+
+    @Test
+    fun midWordEditAdoptsOnlyThePrefixBeforeCaret() {
+        // "thay" with the caret between 'a' and 'y': the composed region is the
+        // prefix "tha"; the committed 'y' stays outside and the caret never jumps.
+        assertEquals("tha", engine.process("tha"))
+        // Typing 'a' folds into 'â' (view: "thâ" + committed "y" = "thây").
+        assertEquals("thâ", engine.process("thaa"))
+        // Typing 's' finishes the edit (view: "thấ" + committed "y" = "thấy").
+        assertEquals("thấ", engine.process("thaas"))
+    }
 }
 
 /** The literal insertion path used by the controller (Telex kernel is bypassed). */
