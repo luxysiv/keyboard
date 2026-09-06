@@ -80,46 +80,41 @@ object GraphemeEditor {
 }
 
 // ============================================================
-// EDITED VIETNAMESE RECOGNIZER (simplified — no full re-parse)
+// EDITED VIETNAMESE RECOGNIZER — canonical rime-table based
 // ============================================================
 object EditedVietnameseRecognizer {
-    private val BASE_VOWELS = setOf('a', 'ă', 'â', 'e', 'ê', 'i', 'y', 'o', 'ô', 'ơ', 'u', 'ư')
-    private val TONED_VOWELS = setOf(
-        'á', 'à', 'ả', 'ã', 'ạ', 'ắ', 'ằ', 'ẳ', 'ẵ', 'ặ', 'ấ', 'ầ', 'ẩ', 'ẫ', 'ậ',
-        'é', 'è', 'ẻ', 'ẽ', 'ẹ', 'ế', 'ề', 'ể', 'ễ', 'ệ',
-        'í', 'ì', 'ỉ', 'ĩ', 'ị',
-        'ó', 'ò', 'ỏ', 'õ', 'ọ', 'ố', 'ồ', 'ổ', 'ỗ', 'ộ', 'ớ', 'ờ', 'ở', 'ỡ', 'ợ',
-        'ú', 'ù', 'ủ', 'ũ', 'ụ', 'ứ', 'ừ', 'ử', 'ữ', 'ự',
-        'ý', 'ỳ', 'ỷ', 'ỹ', 'ỵ'
-    )
-    private val NON_VN_LETTERS = setOf('f', 'j', 'z')
 
+    /**
+     * A committed word "looks Vietnamese" when it parses as a valid
+     * Vietnamese onset + a canonical rime (or a leading part of one).
+     * Backed by the flat [VietnameseRimeTable] instead of the old
+     * NON_VN_LETTERS heuristic, so foreign words like "warm"/"confirm"
+     * are rejected structurally rather than by letter blacklists.
+     */
     fun canRecompose(word: String): Boolean {
         if (word.isEmpty()) return false
         val lower = word.lowercase()
-        // Reject if contains f, j, z (non-Vietnamese letters in Telex)
-        if (lower.any { it in NON_VN_LETTERS }) return false
-        // Reject if has disjoint vowel clusters (V-C-V like "ana", "omo")
-        if (hasDisjointVowelClusters(lower)) return false
-        // Must have at least one vowel
-        return lower.any { it in BASE_VOWELS || it in TONED_VOWELS }
-    }
+        // Strip tone diacritics only — base letters (ê, â, ư, ...) are kept
+        // as-is so the remaining rime matches the canonical table.
+        val stripped = VietnameseUnicode.stripToneFromWord(lower)
+        if (stripped.isEmpty()) return false
 
-    private fun hasDisjointVowelClusters(word: String): Boolean {
-        var vowelGroupCount = 0
-        var inVowel = false
-        for (c in word) {
-            val isVowel = c in BASE_VOWELS || c in TONED_VOWELS
-            if (isVowel) {
-                if (!inVowel) {
-                    vowelGroupCount++
-                    inVowel = true
-                }
-            } else {
-                inVowel = false
+        // Longest valid onset wins (ONSETS is ordered longest-first).
+        var onsetLen = 0
+        for (cand in VietnamesePhonology.ONSETS) {
+            if (stripped.startsWith(cand)) {
+                onsetLen = cand.length
+                break
             }
         }
-        return vowelGroupCount > 1
+
+        val rime = stripped.substring(onsetLen)
+        if (rime.isEmpty()) return false
+
+        // The rime must be a (possibly partial) canonical Vietnamese rime
+        // and must contain at least one base vowel.
+        if (!VietnameseRimeTable.isPrefixValid(rime)) return false
+        return rime.any { VietnameseRimeTable.isBaseVowel(it) }
     }
 
     fun classify(word: String): CompositionMode {
