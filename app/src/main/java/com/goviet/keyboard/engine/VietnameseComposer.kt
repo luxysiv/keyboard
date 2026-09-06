@@ -486,7 +486,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             return handleVowelChar(state, c)
         }
 
-        if (c.isLetter()) {
+        // Onset consonants: b,c,d,đ,g,h,k,l,m,n,p,r,s,t,v,x + q (for qu cluster)
+        // f,j,w,z → not Vietnamese consonants → raw text directly
+        if (lower in "bcdđghklmnprstvx" || lower == 'q') {
             return handleConsonantChar(state, c)
         }
 
