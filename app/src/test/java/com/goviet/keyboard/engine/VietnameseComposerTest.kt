@@ -8,7 +8,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Suite kiểm thử toàn diện cấu trúc mới của VietnameseInputEngine:
+ * Suite kiểm thử toàn diện cấu trúc của VietnameseComposer:
  * 1. Vowel transforms (aa, aw, ee, oo, ow, uw)
  * 2. Tones (s, f, r, x, j)
  * 3. D transforms (dd, dad, dadd)
@@ -19,13 +19,13 @@ import org.junit.Test
  * 8. V-C-V boundary & Free transform (bana, banaa, dungw, dungwf)
  * 9. Incremental composition via processKey
  */
-class VietnameseInputEngineTest {
+class VietnameseComposerTest {
 
-    private lateinit var engine: VietnameseInputEngine
+    private lateinit var engine: VietnameseComposer
 
     @Before
     fun setUp() {
-        engine = VietnameseInputEngine()
+        engine = VietnameseComposer()
         engine.vietnameseModeEnabled = true
     }
 
@@ -1968,5 +1968,4 @@ class VietnameseInputEngineTest {
         assertEquals("thê", engine.processKey('e').text)
     }
 }
-
 

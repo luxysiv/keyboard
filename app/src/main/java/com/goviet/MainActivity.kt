@@ -17,7 +17,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.goviet.databinding.ActivityMainBinding
-import com.goviet.keyboard.engine.VietnameseInputEngine
+import com.goviet.keyboard.engine.VietnameseComposer
 import com.goviet.core.AppPreferences
 import com.goviet.core.dpPx
 
@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AppPreferences.init(applicationContext)
         // Load Preferences initially
-        VietnameseInputEngine().loadPreferences(this)
+        VietnameseComposer().loadPreferences(this)
 
         val themeMode = AppPreferences.getThemeMode()
 

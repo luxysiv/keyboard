@@ -1,7 +1,7 @@
 package com.goviet.keyboard
 
 import com.goviet.keyboard.engine.ImeInputConnectionController
-import com.goviet.keyboard.engine.VietnameseInputEngine
+import com.goviet.keyboard.engine.VietnameseComposer
 import com.goviet.keyboard.engine.BoundaryClassifier
 import com.goviet.keyboard.clipboard.ClipboardCoordinator
 import com.goviet.keyboard.clipboard.ClipboardDatabase
@@ -46,7 +46,7 @@ class VietnameseInputMethodService : InputMethodService(), LifecycleOwner, ViewM
     lateinit var clipboardRepository: ClipboardRepository
     val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     var keyboardRootView: KeyboardRootView? = null
-    val inputEngine = VietnameseInputEngine()
+    val inputEngine = VietnameseComposer()
 
     // Specialized delegated sub-engines
     lateinit var inputProcessor: ImeInputConnectionController

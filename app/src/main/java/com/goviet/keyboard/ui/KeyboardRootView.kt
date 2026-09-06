@@ -28,7 +28,6 @@ import com.goviet.core.dpPx
 import com.goviet.keyboard.util.IconDrawer
 import com.goviet.keyboard.VietnameseInputMethodService
 import com.goviet.keyboard.clipboard.ClipboardEntity
-import com.goviet.keyboard.engine.VietnameseInputEngine
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 

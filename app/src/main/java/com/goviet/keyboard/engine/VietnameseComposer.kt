@@ -726,7 +726,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
 
     // ==========================================
-    // PREFS / MACRO / CONFIG (merged from VietnameseInputEngine)
+    // PREFS / MACRO / CONFIG
     // ==========================================
 
     var macroStore: MacroStore? = null

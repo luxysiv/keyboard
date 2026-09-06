@@ -12,11 +12,11 @@ import java.lang.StringBuilder
  * Architecture Role:
  * - Manages the IME layer interaction with Android's InputConnection.
  * - Handles composing text buffers (composingRaw), cursor tracking, selection, and backspace logic.
- * - Delegates Vietnamese syllable rules and settings (Telex, Simple Telex, Modern Style, Macros) to VietnameseInputEngine.
+ * - Delegates Vietnamese syllable rules and settings (Telex, Simple Telex, Modern Style, Macros) to VietnameseComposer.
  */
 class ImeInputConnectionController(
     val service: VietnameseInputMethodService,
-    val inputEngine: VietnameseInputEngine
+    val inputEngine: VietnameseComposer
 ) {
 
     private val TAG = "ImeInputConnectionController"
