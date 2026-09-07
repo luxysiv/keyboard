@@ -114,11 +114,8 @@ object RimeMap {
     init { build() }
 
     private fun build() {
-        val entryCount = countEntries()
-        var cap = 16
-        while (cap < entryCount * 2) cap *= 2
-        _keys = IntArray(cap)
-        _data = ByteArray(cap)
+        _keys = IntArray(TABLE_SIZE)
+        _data = ByteArray(TABLE_SIZE)
 
         // ── Nuclei and their valid codas (from phonology table) ────
         //
