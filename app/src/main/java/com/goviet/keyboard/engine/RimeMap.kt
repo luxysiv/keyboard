@@ -16,8 +16,8 @@ object RimeMap {
     private var _mask = 0          // table_size - 1 (power of two)
     private var _shift = 0         // 64 - tableBits (top-bits indexing)
     private lateinit var _tableKeys: LongArray
-    private lateinit var _tnNew: ShortArray
-    private lateinit var _tnOld: ShortArray
+    private lateinit var _tnNew: ByteArray
+    private lateinit var _tnOld: ByteArray
     private lateinit var _stop: ByteArray
     private lateinit var _comp: ByteArray
 
@@ -35,7 +35,7 @@ object RimeMap {
     @JvmStatic @JvmOverloads
     fun hashRaw(cs: CharSequence, start: Int = 0, length: Int = cs.length - start): Long {
         var h = FNV_OFF; var i = start; val end = start + length
-        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
         return h
     }
 
@@ -43,8 +43,8 @@ object RimeMap {
     @JvmStatic
     fun hashCatRaw(a: CharSequence, aLen: Int, b: CharSequence, bLen: Int): Long {
         var h = FNV_OFF; var i = 0
-        while (i < aLen) { h = h xor (a[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
-        i = 0; while (i < bLen) { h = h xor (b[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        while (i < aLen) { h = h xor (a[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
+        i = 0; while (i < bLen) { h = h xor (b[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
         return h
     }
 
@@ -53,67 +53,67 @@ object RimeMap {
     @JvmStatic @JvmOverloads
     fun hash(cs: CharSequence, start: Int = 0, length: Int = cs.length - start): Long {
         var h = FNV_OFF; var i = start; val end = start + length
-        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
         return h or 1L
     }
 
     @JvmStatic
     fun hashCat(a: CharSequence, aLen: Int, b: CharSequence, bLen: Int): Long {
         var h = FNV_OFF; var i = 0
-        while (i < aLen) { h = h xor (a[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
-        i = 0; while (i < bLen) { h = h xor (b[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        while (i < aLen) { h = h xor (a[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
+        i = 0; while (i < bLen) { h = h xor (b[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
         return h or 1L
     }
 
     @JvmStatic
     fun hashExtend(baseHash: Long, c: Char): Long {
-        var h = baseHash xor (c.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
+        var h = baseHash xor (c.lowercaseChar().code.toLong()); h *= FNV_MUL
         return h or 1L
     }
 
     @JvmStatic
     fun hashExtend(baseHash: Long, cs: CharSequence, start: Int, length: Int): Long {
         var h = baseHash; var i = start; val end = start + length
-        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
         return h or 1L
     }
 
     @JvmStatic
     fun hashExtend(baseHash: Long, cs: CharArray, start: Int, length: Int): Long {
         var h = baseHash; var i = start; val end = start + length
-        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
+        while (i < end) { h = h xor (cs[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
         return h or 1L
     }
 
     @JvmStatic
     fun hashAppend(base: CharSequence, baseLen: Int, c: Char): Long {
         var h = FNV_OFF; var i = 0
-        while (i < baseLen) { h = h xor (base[i].lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL; i++ }
-        h = h xor (c.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
+        while (i < baseLen) { h = h xor (base[i].lowercaseChar().code.toLong()); h *= FNV_MUL; i++ }
+        h = h xor (c.lowercaseChar().code.toLong()); h *= FNV_MUL
         return h or 1L
     }
 
     @JvmStatic
     fun hashChar(c: Char): Long {
         var h = FNV_OFF
-        h = h xor (c.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
+        h = h xor (c.lowercaseChar().code.toLong()); h *= FNV_MUL
         return h or 1L
     }
 
     @JvmStatic
     fun hash2(a: Char, b: Char): Long {
         var h = FNV_OFF
-        h = h xor (a.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
-        h = h xor (b.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
+        h = h xor (a.lowercaseChar().code.toLong()); h *= FNV_MUL
+        h = h xor (b.lowercaseChar().code.toLong()); h *= FNV_MUL
         return h or 1L
     }
 
     @JvmStatic
     fun hash3(a: Char, b: Char, c: Char): Long {
         var h = FNV_OFF
-        h = h xor (a.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
-        h = h xor (b.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
-        h = h xor (c.lowercaseChar().code.toLong() and 0xFFL); h *= FNV_MUL
+        h = h xor (a.lowercaseChar().code.toLong()); h *= FNV_MUL
+        h = h xor (b.lowercaseChar().code.toLong()); h *= FNV_MUL
+        h = h xor (c.lowercaseChar().code.toLong()); h *= FNV_MUL
         return h or 1L
     }
 
@@ -228,8 +228,8 @@ object RimeMap {
         _shift = 64 - tableBits
 
         _tableKeys  = LongArray(cap)
-        _tnNew      = ShortArray(cap)
-        _tnOld      = ShortArray(cap)
+        _tnNew      = ByteArray(cap)
+        _tnOld      = ByteArray(cap)
         _stop       = ByteArray(cap)
         _comp       = ByteArray(cap)
 
@@ -239,8 +239,8 @@ object RimeMap {
             // Find empty slot (0L sentinel — hash is never 0)
             while (_tableKeys[slot] != 0L) slot = (slot + 1) and _mask
             _tableKeys[slot] = hk
-            _tnNew[slot]     = e.tnN.toShort()
-            _tnOld[slot]     = e.tnO.toShort()
+            _tnNew[slot]     = e.tnN.toByte()
+            _tnOld[slot]     = e.tnO.toByte()
             _stop[slot]      = e.isStop.toByte()
             _comp[slot]      = e.isComp.toByte()
         }
