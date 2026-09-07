@@ -96,8 +96,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 return
             }
 
-            val rimeHash = RimeMap.hashCat(nucleus, nucleus.length, coda, coda.length)
-            val toneIdx = VietnamesePhonology.determineTonePositionHash(rimeHash, oldTonePlacement)
+            val rimeKey = RimeMap.keyCat(nucleus, nucleus.length, coda, coda.length)
+            val toneIdx = VietnamesePhonology.determineTonePositionHash(rimeKey.toLong(), oldTonePlacement)
 
             for (i in 0 until onset.length) out.append(onset[i])
             for (i in 0 until nucleus.length) {
@@ -588,8 +588,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         }
 
         // Validate rime + tone in a single hash lookup — zero allocation
-        val currentRimeHash = RimeMap.hashCat(state.nucleus, nLen, state.coda, state.coda.length)
-        if (!VietnamesePhonology.isRimeHashValidForTone(currentRimeHash, targetTone)) {
+        val currentRimeKey = RimeMap.keyCat(state.nucleus, nLen, state.coda, state.coda.length)
+        if (!VietnamesePhonology.isRimeHashValidForTone(currentRimeKey.toLong(), targetTone)) {
             return false
         }
 
@@ -737,9 +737,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // 3. Normal vowel expansion into nucleus (if no coda yet)
         if (state.coda.isEmpty()) {
             // Hash nucleus + new char incrementally — zero allocation
-            // MUST use hashRaw (no or 1L) as base for hashExtend
-            val nucRawHash = RimeMap.hashRaw(state.nucleus, 0, state.nucleus.length)
-            if (VietnamesePhonology.isValidPrefixHash(RimeMap.hashExtend(nucRawHash, c))) {
+            // Direct rime key: nucleus + new vowel char — O(1) bit-shift encoding
+            val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(state.nucleus), c)
+            if (RimeMap.isValidPrefix(candidateKey)) {
                 state.nucleus = state.nucleus + c
                 state.lastToggle = null
                 return true
@@ -785,11 +785,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             (c0 == 'n' && (cLow == 'g' || cLow == 'h')) || (c0 == 'c' && cLow == 'h')
         } else false
         if (codaValid) {
-            // MUST use hashCatRaw (no or 1L) as base for hashExtend
-            val rimeRawHash = RimeMap.hashCatRaw(effectiveNucleus, effectiveNucleus.length, state.coda, state.coda.length)
-            val candidateRimeHash = RimeMap.hashExtend(rimeRawHash, c)
-            if (VietnamesePhonology.isValidPrefixHash(candidateRimeHash) &&
-                VietnamesePhonology.isRimeHashValidForTone(candidateRimeHash, state.tone)) {
+            // Direct rime key: nucleus + coda + new coda char — O(1) bit-shift encoding
+            val candidateKey = RimeMap.keyCat(effectiveNucleus, effectiveNucleus.length, state.coda + c)
+            if (RimeMap.isValidPrefix(candidateKey) &&
+                RimeMap.isToneAllowed(candidateKey, state.tone.index)) {
                 state.nucleus = effectiveNucleus
                 state.coda = state.coda + c
                 state.lastToggle = null

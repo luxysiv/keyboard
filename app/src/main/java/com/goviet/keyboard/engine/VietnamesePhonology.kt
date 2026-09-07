@@ -69,14 +69,13 @@ object VietnamesePhonology {
     fun isVowel(c: Char): Boolean = c.lowercaseChar() in VOWELS
 
 // ============================================================
-    // SECTION 2: ZERO-GC FLAT MAP RIME DATA (validation, tone placement)
+    // SECTION 2: FLAT MAP RIME DATA (validation, tone placement)
     // ============================================================
 
     /**
-     * Rime validation and tone placement are delegated to [RimeMap] — a sorted
-     * LongArray + binary search backed by 64-bit FNV-1a hashes.  All lookups are
-     * primitive (no HashMap boxing, no String allocation) so the composer hot path
-     * stays garbage-free on low-end Unisoc / Cortex-A53 devices.
+     * Rime validation and tone placement are delegated to [RimeMap] — a flat
+     * map with direct integer key lookup.  All lookups are O(1) with no FNV
+     * multiplication — just compact bit-shift key computation + flat primitive probe.
      */
 
     /**
@@ -84,7 +83,7 @@ object VietnamesePhonology {
      */
     fun isValidPrefix(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
         if (length == 0) return true
-        return RimeMap.isValidPrefix(RimeMap.hash(candidate, start, length))
+        return RimeMap.isValidPrefix(RimeMap.rimeKey(candidate, start, length))
     }
 
     /**
@@ -92,7 +91,7 @@ object VietnamesePhonology {
      * (first [bLen] chars) is a valid prefix.  Zero allocation on the hot path.
      */
     fun isValidPrefixCat(a: CharSequence, aLen: Int, b: CharSequence, bLen: Int): Boolean {
-        return RimeMap.isValidPrefix(RimeMap.hashCat(a, aLen, b, bLen))
+        return RimeMap.isValidPrefix(RimeMap.keyCat(a, aLen, b, bLen))
     }
 
     /**
@@ -100,7 +99,7 @@ object VietnamesePhonology {
      */
     fun isCompleteRime(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
         if (length == 0) return false
-        return RimeMap.isComplete(RimeMap.hash(candidate, start, length))
+        return RimeMap.isComplete(RimeMap.rimeKey(candidate, start, length))
     }
 
     fun isValidRime(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean =
@@ -108,13 +107,13 @@ object VietnamesePhonology {
 
     fun isStopCoda(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
         if (length == 0) return false
-        return RimeMap.isStop(RimeMap.hash(candidate, start, length))
+        return RimeMap.isStop(RimeMap.rimeKey(candidate, start, length))
     }
 
     fun getTonePosition(candidate: CharSequence, oldTonePlacement: Boolean, start: Int = 0, length: Int = candidate.length - start): Int {
         if (length == 0) return 0
-        val h = RimeMap.hash(candidate, start, length)
-        val i = RimeMap.indexOf(h)
+        val k = RimeMap.rimeKey(candidate, start, length)
+        val i = RimeMap.indexOf(k)
         if (i < 0) return 0
         return if (oldTonePlacement) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
     }
@@ -129,26 +128,28 @@ object VietnamesePhonology {
      */
     fun isRimeValidForTone(rime: String, tone: Tone): Boolean {
         if (rime.isEmpty()) return false
-        return RimeMap.isToneAllowed(RimeMap.hash(rime), tone.index)
+        return RimeMap.isToneAllowed(RimeMap.rimeKey(rime), tone.index)
     }
 
     /**
-     * Validate that a rime (defined by its precomputed hash) is valid for a specific tone.
+     * Validate that a rime (defined by its precomputed key) is valid for a specific tone.
+     * Key is an Int rimeKey from [RimeMap.rimeKey] — passed as Long for backward compatibility.
      */
-    fun isRimeHashValidForTone(hash: Long, tone: Tone): Boolean =
-        RimeMap.isToneAllowed(hash, tone.index)
+    fun isRimeHashValidForTone(key: Long, tone: Tone): Boolean =
+        RimeMap.isToneAllowed(key.toInt(), tone.index)
 
     /**
-     * Check if a precomputed hash is a valid prefix of any Vietnamese rime.
-     * Zero allocation — delegates directly to the flat map.
+     * Check if a precomputed key is a valid prefix of any Vietnamese rime.
+     * Key is an Int rimeKey from [RimeMap.rimeKey] — passed as Long for backward compatibility.
      */
-    fun isValidPrefixHash(hash: Long): Boolean = RimeMap.isValidPrefix(hash)
+    fun isValidPrefixHash(key: Long): Boolean = RimeMap.isValidPrefix(key.toInt())
 
     /**
-     * Determine tone position from a precomputed rime hash — zero allocation.
+     * Determine tone position from a precomputed rime key — zero allocation.
+     * Key is an Int rimeKey from [RimeMap.rimeKey] — passed as Long for backward compatibility.
      */
-    fun determineTonePositionHash(rimeHash: Long, oldTonePlacement: Boolean): Int {
-        val i = RimeMap.indexOf(rimeHash)
+    fun determineTonePositionHash(rimeKey: Long, oldTonePlacement: Boolean): Int {
+        val i = RimeMap.indexOf(rimeKey.toInt())
         if (i < 0) return 0
         return if (oldTonePlacement) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
     }
@@ -176,8 +177,8 @@ object VietnamesePhonology {
             else if (isRimeFirstI && isG) { rimeStart = 1; offset = 1 }
         }
 
-        val h = RimeMap.hash(rime, rimeStart, rimeLen - rimeStart)
-        val i = RimeMap.indexOf(h)
+        val k = RimeMap.rimeKey(rime, rimeStart, rimeLen - rimeStart)
+        val i = RimeMap.indexOf(k)
         if (i < 0) return null
         val basePos = if (oldTonePlacement) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
         return basePos + offset
@@ -618,8 +619,8 @@ object VietnamesePhonology {
      */
     fun determineTonePosition(rime: String, onset: String, placement: TonePlacement): Int {
         if (rime.isEmpty()) return 0
-        val h = RimeMap.hash(rime)
-        val i = RimeMap.indexOf(h)
+        val k = RimeMap.rimeKey(rime)
+        val i = RimeMap.indexOf(k)
         if (i < 0) return 0
         return if (placement == TonePlacement.LEGACY) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
     }
