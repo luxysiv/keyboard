@@ -499,13 +499,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         val isUpper = c.isUpperCase()
 
         if (state.rawSuffix.isNotEmpty()) {
-            if (lower == 'a' && state.rawSuffix == "n" && state.coda == "n" && state.nucleus.contains('ă')) {
-                val handled = handleVowelModifierKey(state, lower, isUpper, isStaticReDerive)
-                if (handled) {
-                    state.rawSuffix = ""
-                    return true
-                }
-            }
             state.lastToggle = null
             state.rawSuffix += c
             return true
