@@ -872,7 +872,13 @@ class ImeInputConnectionController(
 
     fun compileText(raw: String): String {
         if (raw.isEmpty()) return ""
-        inputEngine.compileRaw(raw, isVietnamese, displayBuf)
+        // The caller always passes Telex keystrokes (canonical raw). Vietnamese
+        // compilation MUST NOT depend on the current isVietnamese flag: a word
+        // that went literal (rawSuffix) would otherwise fail this round-trip and
+        // stay locked in literal mode forever — after backspace the remaining
+        // display ("tiê", "ê") would never re-transform even though it is a valid
+        // Vietnamese syllable. Force Vietnamese mode here.
+        inputEngine.compileRaw(raw, vietnamese = true, displayBuf)
         return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), raw)
     }
 
