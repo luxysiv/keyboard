@@ -785,8 +785,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             (c0 == 'n' && (cLow == 'g' || cLow == 'h')) || (c0 == 'c' && cLow == 'h')
         } else false
         if (codaValid) {
-            // Direct rime key: nucleus + coda + new coda char — O(1) bit-shift encoding
-            val candidateKey = RimeMap.keyCat(effectiveNucleus, effectiveNucleus.length, state.coda + c)
+            // Build rime key incrementally: nucleus → +coda → +new coda char
+            // Zero allocation — just bit-shift extendKeySingle on existing chars.
+            var candidateKey = RimeMap.rimeKey(effectiveNucleus)
+            var ci = 0
+            while (ci < state.coda.length) { candidateKey = RimeMap.extendKeySingle(candidateKey, state.coda[ci]); ci++ }
+            candidateKey = RimeMap.extendKeySingle(candidateKey, c)
             if (RimeMap.isValidPrefix(candidateKey) &&
                 RimeMap.isToneAllowed(candidateKey, state.tone.index)) {
                 state.nucleus = effectiveNucleus
