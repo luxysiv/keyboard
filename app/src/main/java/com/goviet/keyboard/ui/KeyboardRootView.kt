@@ -490,7 +490,7 @@ class KeyboardRootView @JvmOverloads constructor(
                 }
                 standardLetterGrid.onToggleLanguage = {
                     service._languageMode.value = if (languageMode == "VIE") "ENG" else "VIE"
-                    service.composingRaw.clear()
+                    service.inputProcessor.clearState()
                     service.currentInputConnection?.finishComposingText()
                 }
             }
@@ -547,7 +547,7 @@ class KeyboardRootView @JvmOverloads constructor(
                 }
                 standardLetterGrid.onToggleLanguage = {
                     service._languageMode.value = if (languageMode == "VIE") "ENG" else "VIE"
-                    service.composingRaw.clear()
+                    service.inputProcessor.clearState()
                     service.currentInputConnection?.finishComposingText()
                 }
                 standardLetterGrid.onOpenPopup = { options ->
