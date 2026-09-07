@@ -26,7 +26,7 @@ object RimeMap {
     private const val RIME_ALPHA = "aăâeêioôơuưycmntpgh"
 
     /** 5-bit index for each Vietnamese rime character.  Non-rime chars → 0 (maps to 'a'). */
-    private val CHAR_IDX = IntArray(128).also { arr ->
+    private val CHAR_IDX = IntArray(512).also { arr ->
         for (i in RIME_ALPHA.indices) arr[RIME_ALPHA[i].code] = i
     }
 
@@ -34,7 +34,7 @@ object RimeMap {
     @JvmStatic
     fun charIndex(c: Char): Int {
         val code = c.lowercaseChar().code
-        return if (code in 0..127) CHAR_IDX[code] else 0
+        return if (code in 0 until CHAR_IDX.size) CHAR_IDX[code] else 0
     }
 
     /**
