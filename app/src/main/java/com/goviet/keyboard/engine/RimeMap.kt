@@ -21,7 +21,6 @@ object RimeMap {
     private lateinit var _stop: ByteArray
     private lateinit var _comp: ByteArray
 
-    init { build() }
 
     // ── Hash functions (zero allocation) ──────────────────────────
     //
@@ -161,94 +160,98 @@ object RimeMap {
 
     private data class Entry(val hk: Long, val tnN: Int, val tnO: Int, val isStop: Int, val isComp: Int)
 
+    // Vietnamese rime model (data-driven)
+    private val C_ALL    = arrayOf("c","ch","p","t","m","n","ng","nh")
+    private val C_SHORT  = arrayOf("c","p","t","m","n","ng")
+    private val C_Y      = arrayOf("t","ch","n","nh")
+    private val C_UY     = arrayOf("p","t","ch","n","nh")
+    private val C_TMNG   = arrayOf("t","m","n","ng")
+    private val C_COVER  = arrayOf("c","n","ng","m","p","t")
+    private val C_NONE   = emptyArray<String>()
+
+    private data class NucSpec(
+        val nucleus: String,
+        val codas: Array<String>,
+        val tnNew: Int,
+        val tnOld: Int = tnNew
+    )
+
+    private val NUCLEI = arrayOf(
+        NucSpec("a",  C_ALL,   0),    NucSpec("ă",  C_SHORT, 0),
+        NucSpec("â",  C_SHORT, 0),    NucSpec("e",  C_ALL,   0),
+        NucSpec("ê",  C_ALL,   0),    NucSpec("i",  C_ALL,   0),
+        NucSpec("o",  C_SHORT, 0),    NucSpec("ô",  C_SHORT, 0),
+        NucSpec("ơ",  C_SHORT, 0),    NucSpec("u",  C_SHORT, 0),
+        NucSpec("ư",  C_SHORT, 0),    NucSpec("y",  C_Y,     0),
+        NucSpec("oa", C_ALL,   1, 0), NucSpec("oă", C_SHORT, 1, 0),
+        NucSpec("oe", C_SHORT, 1, 0), NucSpec("ue", C_ALL,   1, 0),
+        NucSpec("uy", C_UY,    1, 0), NucSpec("uâ", C_SHORT, 1, 1),
+        NucSpec("uê", C_Y,     1, 1), NucSpec("uô", C_SHORT, 1, 1),
+        NucSpec("uo", C_SHORT, 1, 1), NucSpec("ua", C_SHORT, 0),
+        NucSpec("ưa", C_NONE,  0),    NucSpec("uơ", C_NONE,  0),
+        NucSpec("ươ", C_SHORT, 1, 1), NucSpec("ia", C_NONE,  0),
+        NucSpec("ie", C_SHORT, 1, 1), NucSpec("iê", C_SHORT, 1, 1),
+        NucSpec("ye", C_TMNG,  1, 1), NucSpec("yê", C_TMNG,  1, 1),
+        NucSpec("oo", C_COVER, 1, 1), NucSpec("uye", C_ALL,  2),
+        NucSpec("uyê", C_ALL,  2),
+        NucSpec("ai",  C_NONE, 0), NucSpec("ao",  C_NONE, 0),
+        NucSpec("au",  C_NONE, 0), NucSpec("ay",  C_NONE, 0),
+        NucSpec("âu",  C_NONE, 0), NucSpec("ây",  C_NONE, 0),
+        NucSpec("eo",  C_NONE, 0), NucSpec("eu",  C_NONE, 0),
+        NucSpec("êu",  C_NONE, 0), NucSpec("iu",  C_NONE, 0),
+        NucSpec("oi",  C_NONE, 0), NucSpec("ôi",  C_NONE, 0),
+        NucSpec("ơi",  C_NONE, 0), NucSpec("ui",  C_NONE, 0),
+        NucSpec("uu",  C_NONE, 0), NucSpec("ưi",  C_NONE, 0),
+        NucSpec("ieu", C_NONE, 1), NucSpec("iêu", C_NONE, 1),
+        NucSpec("yeu", C_NONE, 1), NucSpec("yêu", C_NONE, 1),
+        NucSpec("uoi", C_NONE, 1), NucSpec("uôi", C_NONE, 1),
+        NucSpec("uơi", C_NONE, 1), NucSpec("uou", C_NONE, 1),
+        NucSpec("uya", C_NONE, 1), NucSpec("uyu", C_NONE, 1),
+        NucSpec("ươi", C_NONE, 1), NucSpec("ươu", C_NONE, 1),
+        NucSpec("oai", C_NONE, 1), NucSpec("oao", C_NONE, 1),
+        NucSpec("oay", C_NONE, 1), NucSpec("oeo", C_NONE, 1),
+        NucSpec("uau", C_NONE, 1), NucSpec("uay", C_NONE, 1),
+        NucSpec("uâu", C_NONE, 1), NucSpec("uây", C_NONE, 1),
+        NucSpec("ueu", C_NONE, 1), NucSpec("uêu", C_NONE, 1),
+    )
+
+    init { build() }
+
     private fun build() {
-        // Complete rime strings
-        val rimes = ArrayList<String>(250)
-        val stops = HashSet<String>(100)
-
-        val ca = arrayOf("c","ch","p","t","m","n","ng","nh")
-        val cs = arrayOf("c","p","t","m","n","ng")
-        val cd = arrayOf("t","ch","n","nh")
-        val cl = arrayOf("p","t","ch","n","nh")
-
-        fun add(r: String, stop: Boolean = false) { rimes.add(r); if (stop) stops.add(r) }
-        fun nuc(nu: String, codas: Array<String>) {
-            add(nu); for (c in codas) add(nu + c, c == "c" || c == "ch" || c == "p" || c == "t")
-        }
-
-        nuc("a",ca);nuc("ă",cs);nuc("â",cs);nuc("e",ca);nuc("ê",ca);nuc("i",ca)
-        nuc("o",cs);nuc("ô",cs);nuc("ơ",cs);nuc("u",cs);nuc("ư",cs);nuc("y",cd)
-        nuc("oa",ca);nuc("oă",cs);nuc("oe",cs);nuc("ue",ca);nuc("uy",cl)
-        nuc("uâ",cs);nuc("uê",cd);nuc("uô",cs);nuc("uo",cs)
-        nuc("ua",cs);add("ưa");add("uơ");nuc("ươ",cs)
-        add("ia");nuc("ie",cs);nuc("iê",cs)
-        nuc("ye",arrayOf("t","m","n","ng"));nuc("yê",arrayOf("t","m","n","ng"))
-        nuc("oo",arrayOf("c","n","ng","m","p","t"))
-        nuc("uye",ca);nuc("uyê",ca)
-        for (r in arrayOf("ai","ao","au","ay","âu","ây","eo","eu","êu","iu","oi","ôi","ơi","ui","uu","ưi")) add(r)
-        for (r in arrayOf("ieu","iêu","yeu","yêu","uoi","uôi","uơi","uou","uya","uyu","ươi","ươu","oai","oao","oay","oeo","uau","uay","uâu","uây","ueu","uêu")) add(r)
-
-        // Nucleus → (tonePosNew, tonePosOld)
-        val nt = HashMap<String, IntArray>(80)
-        fun tn(nu: String, n: Int, o: Int = n) { nt[nu] = intArrayOf(n, o) }
-
-        for (n in arrayOf("a","ă","â","e","ê","i","o","ô","ơ","u","ư","y")) tn(n, 0)
-        for (n in arrayOf("oa","oă","oe","ue","uy")) tn(n, 1, 0)
-        for (n in arrayOf("uâ","uê","uô","uo","uơ","ươ","ie","iê","ye","yê","oo")) tn(n, 1, 1)
-        tn("ua", 0); tn("ia", 0); tn("ưa", 0)
-        tn("uye", 2); tn("uyê", 2)
-        for (n in arrayOf("ai","ao","au","ay","âu","ây","eo","eu","êu","iu","oi","ôi","ơi","ui","uu","ưi")) tn(n, 0)
-        for (n in arrayOf("ieu","iêu","yeu","yêu","uoi","uôi","uơi","uou","uya","uyu","ươi","ươu","oai","oao","oay","oeo","uau","uay","uâu","uây","ueu","uêu")) tn(n, 1)
-
-        // Nucleus registry for stripping coda
-        val nucSet = nt.keys
-
-        // Phase 1: complete rime entries
         val map = HashMap<Long, Entry>(600)
-        for (r in rimes) {
-            val hk = h(r)
-            val nu = stripCoda(r, nucSet)
-            val pos = nt[nu] ?: intArrayOf(0, 0)
-            map[hk] = Entry(hk, pos[0], pos[1], if (r in stops) 1 else 0, 1)
+        val allRimes = mutableListOf<String>()
+        for (spec in NUCLEI) {
+            allRimes.add(spec.nucleus)
+            val nucHash = h(spec.nucleus)
+            map.putIfAbsent(nucHash, Entry(nucHash, spec.tnNew, spec.tnOld, 0, 1))
+            for (c in spec.codas) {
+                val rime = spec.nucleus + c
+                allRimes.add(rime)
+                val rk = h(rime)
+                val isStop = c == "c" || c == "ch" || c == "p" || c == "t"
+                map[rk] = Entry(rk, spec.tnNew, spec.tnOld, if (isStop) 1 else 0, 1)
+            }
         }
-        // Phase 2: prefix entries (all leading substrings)
-        for (r in rimes) {
+        for (r in allRimes) {
             for (len in 1 until r.length) {
                 val hk = h(r, len)
                 map.putIfAbsent(hk, Entry(hk, 0, 0, 0, 0))
             }
         }
-
-        // Phase 3: build open-addressing hash table (linear probing)
         val entryCount = map.size
-        var cap = 16
-        var tableBits = 4
-        while (cap < entryCount * 2) { cap *= 2; tableBits++ }   // load factor ~0.5
-        _mask = cap - 1
-        _shift = 64 - tableBits
-
-        _tableKeys  = LongArray(cap)
-        _tnNew      = ByteArray(cap)
-        _tnOld      = ByteArray(cap)
-        _stop       = ByteArray(cap)
-        _comp       = ByteArray(cap)
-
+        var cap = 16; var tableBits = 4
+        while (cap < entryCount * 2) { cap *= 2; tableBits++ }
+        _mask = cap - 1; _shift = 64 - tableBits
+        _tableKeys = LongArray(cap)
+        _tnNew = ByteArray(cap); _tnOld = ByteArray(cap)
+        _stop  = ByteArray(cap); _comp  = ByteArray(cap)
         for (e in map.values) {
             val hk = e.hk
             var slot = (hk ushr _shift).toInt() and _mask
-            // Find empty slot (0L sentinel — hash is never 0)
             while (_tableKeys[slot] != 0L) slot = (slot + 1) and _mask
             _tableKeys[slot] = hk
-            _tnNew[slot]     = e.tnN.toByte()
-            _tnOld[slot]     = e.tnO.toByte()
-            _stop[slot]      = e.isStop.toByte()
-            _comp[slot]      = e.isComp.toByte()
+            _tnNew[slot] = e.tnN.toByte(); _tnOld[slot] = e.tnO.toByte()
+            _stop[slot]  = e.isStop.toByte(); _comp[slot] = e.isComp.toByte()
         }
-    }
-
-    private fun stripCoda(r: String, nucSet: Set<String>): String {
-        var len = r.length
-        while (len > 1) { val n = r.substring(0, len); if (nucSet.contains(n)) return n; len-- }
-        return r
     }
 }

@@ -15,9 +15,24 @@ object VietnamesePhonology {
     // ============================================================
     // SECTION 1: LEXICON (vowels, consonants, onsets, codas)
     // ============================================================
-private val BASE_VOWELS = setOf(
-        'a', 'ă', 'â', 'e', 'ê', 'i', 'y', 'o', 'ô', 'ơ', 'u', 'ư'
-    )
+/**
+     * 12 Vietnamese base vowels (unaccented) — single source of truth.
+     * Derived from the Vietnamese vowel inventory: a ă â e ê i o ô ơ u ư y.
+     */
+    val BASE_VOWELS = "aăâeêioôơuưy"
+
+    /** Telex tone keys: s(đacute), f(grave), r(hook), x(tilde), j(dot), z(clear). */
+    val TONE_KEYS = "sfrxjz"
+
+    /** Telex vowel modifier keys (fold triggers): e(→ê), o(→ô), a(→â), w(→ă/ơ/ư). */
+    val VOWEL_MOD_KEYS = "eoaw"
+
+    /**
+     * Single-char onset consonants for bitmap dispatch.
+     * These are valid Vietnamese onsets OR literal consonants (f,j,w,z excluded
+     * as non-Vietnamese → raw text; handled at the filter level).
+     */
+    val ONSET_LETTERS = "bcdđghklmnprstvxq"
 
     private val VOWELS = setOf(
         'a', 'ă', 'â', 'e', 'ê', 'i', 'y', 'o', 'ô', 'ơ', 'u', 'ư',

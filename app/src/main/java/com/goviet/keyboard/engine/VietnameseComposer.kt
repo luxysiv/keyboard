@@ -445,10 +445,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
          * Size 512 covers all base Vietnamese letters (đ=273, ơ=417, ư=432).
          */
         private val CHAR_PROPS = ByteArray(512).also { p ->
-            for (c in "sfrxjz") p[c.code] = (p[c.code].toInt() or PROP_TONE).toByte()
-            for (c in "eoaw") p[c.code] = (p[c.code].toInt() or PROP_MOD).toByte()
-            for (c in "aăâeêioôơuưy") p[c.code] = (p[c.code].toInt() or PROP_VOWEL).toByte()
-            for (c in "bcdđghklmnprstvxq") p[c.code] = (p[c.code].toInt() or PROP_ONSET).toByte()
+            for (c in VietnamesePhonology.TONE_KEYS) p[c.code] = (p[c.code].toInt() or PROP_TONE).toByte()
+            for (c in VietnamesePhonology.VOWEL_MOD_KEYS) p[c.code] = (p[c.code].toInt() or PROP_MOD).toByte()
+            for (c in VietnamesePhonology.BASE_VOWELS) p[c.code] = (p[c.code].toInt() or PROP_VOWEL).toByte()
+            for (c in VietnamesePhonology.ONSET_LETTERS) p[c.code] = (p[c.code].toInt() or PROP_ONSET).toByte()
             p['d'.code] = (p['d'.code].toInt() or PROP_D).toByte() // only d → handleKeyD; đ stays an onset
             // Boundary set == BoundaryClassifier: ASCII whitespace + separators +
             // NEL(133), NBSP(160), «(171), »(187) — all < 256.
