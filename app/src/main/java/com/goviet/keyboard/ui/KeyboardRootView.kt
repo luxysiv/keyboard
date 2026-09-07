@@ -1270,7 +1270,7 @@ class UnifiedTopHeaderView(context: Context, private val rootView: KeyboardRootV
             in DrawerButton.ALL.map { it.id } -> {
                 val btn = DrawerButton.ALL.first { it.id == id }
                 if (btn == DrawerButton.LANGUAGE) {
-                    rootView.service.switchToNextInputMethod()
+                    rootView.service.toggleLanguage()
                 } else {
                     rootView.service._keyboardMode.value = DrawerButton.toggleMode(rootView.keyboardMode, btn)
                 }

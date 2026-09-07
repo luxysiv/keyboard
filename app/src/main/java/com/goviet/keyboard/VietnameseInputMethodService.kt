@@ -82,6 +82,11 @@ class VietnameseInputMethodService : InputMethodService(), LifecycleOwner, ViewM
         currentInputConnection?.finishComposingText()
     }
 
+    fun toggleLanguage() {
+        val newIndex = if (_languageMode.value == "VIE") 2 else 0
+        applyInputMethod(newIndex)
+    }
+
     fun switchToNextInputMethod() {
         applyInputMethod((currentInputMethodIndex.value + 1) % inputMethods.size)
     }
