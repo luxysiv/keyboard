@@ -12,7 +12,7 @@ object OnsetMap {
     // 5 bits → max 32 unique indices. This alphabet covers all Vietnamese
     // onset consonants so each char gets a unique index (no collisions).
     // 'w' is NOT an onset consonant; handled separately with W_INDEX.
-    private const val ONSET_ALPHA = "aăâeêioôơuưycmntpghbdkđlrsvxq"
+    private const val ONSET_ALPHA = "aăâeêioôơuưycmntpghbdkđlrsvx"
     private const val W_INDEX = ONSET_ALPHA.length  // 28
     private val CHAR_IDX = IntArray(512).also { arr ->
         for (i in ONSET_ALPHA.indices) arr[ONSET_ALPHA[i].code] = i
@@ -59,10 +59,14 @@ object OnsetMap {
     private fun build() {
         _keys = IntArray(TABLE_SIZE)
         _data = ByteArray(TABLE_SIZE)
-        // Mark single chars that start compound onsets as prefixes
+        // Mark single-char onsets that also start compounds as prefixes.
+        // 'q' is NOT a valid Vietnamese consonant (only 'qu' is), so it must
+        // not be inserted — it would collide with 'a' at index 0.
         val firstChars = mutableSetOf<Char>()
         for (o in ALL_ONSETS) if (o.length > 1) firstChars.add(o[0])
-        for (c in firstChars) insertOr(onsetKey(c), 0x02)
+        for (c in firstChars) {
+            if (find(onsetKey(c)) >= 0) insertOr(onsetKey(c), 0x02)
+        }
         // Insert all complete onsets
         for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
     }
