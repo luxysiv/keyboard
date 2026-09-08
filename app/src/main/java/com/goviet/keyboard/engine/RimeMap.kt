@@ -25,9 +25,16 @@ object RimeMap {
     /** Rime-alphabet character set: a ă â e ê i o ô ơ u ư y c ch g h m n ng nh p t */
     private const val RIME_ALPHA = "aăâeêioôơuưycmntpgh"
 
+    /** Unique index for 'w' — prevents collision with 'a' (index 0) in packed keys.
+     *  'w' never appears in valid Vietnamese rimes, but after an untoggle (e.g. uww → uw)
+     *  it can appear in the nucleus string. Without this, rimeKey("uw") == rimeKey("ua")
+     *  causing false-positive tone/coda lookups on the untoggled literal. */
+    private const val W_INDEX = 19
+
     /** 5-bit index for each Vietnamese rime character.  Non-rime chars → 0 (maps to 'a'). */
     private val CHAR_IDX = IntArray(512).also { arr ->
         for (i in RIME_ALPHA.indices) arr[RIME_ALPHA[i].code] = i
+        arr['w'.code] = W_INDEX
     }
 
     /** Encode one Vietnamese rime character to its 5-bit index. */
