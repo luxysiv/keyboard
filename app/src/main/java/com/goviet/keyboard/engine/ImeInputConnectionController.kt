@@ -746,7 +746,7 @@ class ImeInputConnectionController(
 
                         // Feed key into live state — incremental, no replay.
                         if (isVietnamese && actualKey.length == 1) {
-                            inputEngine.feedKey(composingState, actualKey[0])
+                            inputEngine.feedKey(composingRaw, composingState, actualKey[0])
                         }
                         val casedDisplay = if (isVietnamese) {
                             composingState.toDisplayString(inputEngine.options.oldTonePlacement)
