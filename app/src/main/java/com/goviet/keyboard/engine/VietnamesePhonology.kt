@@ -27,12 +27,6 @@ object VietnamesePhonology {
     /** Telex vowel modifier keys (fold triggers): e(→ê), o(→ô), a(→â), w(→ă/ơ/ư). */
     val VOWEL_MOD_KEYS = "eoaw"
 
-    /**
-     * Single-char onset consonants for bitmap dispatch.
-     * These are valid Vietnamese onsets OR literal consonants (f,j,w,z excluded
-     * as non-Vietnamese → raw text; handled at the filter level).
-     */
-    val ONSET_LETTERS = "bcdđghklmnprstvx"
 
     private val VOWELS = setOf(
         'a', 'ă', 'â', 'e', 'ê', 'i', 'y', 'o', 'ô', 'ơ', 'u', 'ư',
@@ -43,13 +37,8 @@ object VietnamesePhonology {
         'ạ', 'ặ', 'ậ', 'ẹ', 'ệ', 'ị', 'ỵ', 'ọ', 'ộ', 'ợ', 'ụ', 'ự'
     )
 
-/**
-     * Valid initial consonantal clusters (longest-first order for greedy matching).
-     */
-    val ONSETS = arrayOf(
-        "ngh", "ng", "nh", "th", "tr", "ch", "ph", "kh", "gh", "gi", "qu",
-        "b", "c", "d", "đ", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x"
-    )
+    /** All valid Vietnamese onsets — delegated to [OnsetMap]. */
+    val ONSETS = OnsetMap.ALL_ONSETS
 
     /**
      * Valid final consonantal clusters.
@@ -189,37 +178,8 @@ object VietnamesePhonology {
     private inline fun toLower(c: Char): Char =
         if (c in 'A'..'Z') (c.code + 32).toChar() else c.lowercaseChar()
 
-    fun isValidOnset(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean {
-        if (length == 0) return true
-        if (length == 1) {
-            val c = toLower(onset[start])
-            return when (c) {
-                'b', 'c', 'd', 'đ', 'g', 'h', 'k', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'x' -> true
-                else -> false
-            }
-        }
-        if (length == 2) {
-            val c0 = toLower(onset[start])
-            val c1 = toLower(onset[start + 1])
-            return when (c0) {
-                'c' -> c1 == 'h'
-                'g' -> c1 == 'h' || c1 == 'i'
-                'k' -> c1 == 'h'
-                'n' -> c1 == 'h' || c1 == 'g'
-                'p' -> c1 == 'h'
-                'q' -> c1 == 'u'
-                't' -> c1 == 'h' || c1 == 'r'
-                else -> false
-            }
-        }
-        if (length == 3) {
-            val c0 = toLower(onset[start])
-            val c1 = toLower(onset[start + 1])
-            val c2 = toLower(onset[start + 2])
-            return c0 == 'n' && c1 == 'g' && c2 == 'h'
-        }
-        return false
-    }
+    fun isValidOnset(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean =
+        OnsetMap.isValidOnset(onset, start, length)
 
     fun isValidCoda(coda: CharSequence, start: Int = 0, length: Int = coda.length - start): Boolean {
         if (length == 0) return true
@@ -240,7 +200,7 @@ object VietnamesePhonology {
         val stripped = VietnameseUnicode.stripToneFromWord(word)
         val len = stripped.length
         for (onsetLen in minOf(3, len) downTo 1) {
-            if (isValidOnset(stripped, 0, onsetLen)) {
+            if (OnsetMap.isCompleteOnset(stripped, 0, onsetLen)) {
                 if (isValidRime(stripped, onsetLen, len - onsetLen)) {
                     return true
                 }

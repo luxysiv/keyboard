@@ -273,25 +273,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // 2. Extract onset (longest valid initial consonant)
         var onset = ""
         var remainingAfterOnset = baseWord
-        for (cand in VietnamesePhonology.ONSETS) {
-            if (baseLower.startsWith(cand)) {
-                if (cand == "gi" && baseLower.length > 2 && VietnamesePhonology.isBaseVowel(baseLower[2])) {
-                    onset = baseWord.substring(0, 2)
-                    remainingAfterOnset = baseWord.substring(2)
-                    break
-                } else if (cand == "qu" && baseLower.length > 2 && VietnamesePhonology.isBaseVowel(baseLower[2])) {
-                    onset = baseWord.substring(0, 2)
-                    remainingAfterOnset = baseWord.substring(2)
-                    break
-                } else if (cand == "gi" && (baseLower.length == 2 || !VietnamesePhonology.isBaseVowel(baseLower[2]))) {
-                    onset = baseWord.substring(0, 1)
-                    remainingAfterOnset = baseWord.substring(1)
-                    break
-                } else {
-                    onset = baseWord.substring(0, cand.length)
-                    remainingAfterOnset = baseWord.substring(cand.length)
-                    break
-                }
+        for (onsetLen in minOf(3, baseLower.length) downTo 1) {
+            if (OnsetMap.isCompleteOnset(baseLower, 0, onsetLen)) {
+                onset = baseWord.substring(0, onsetLen)
+                remainingAfterOnset = baseWord.substring(onsetLen)
+                break
             }
         }
 
@@ -426,7 +412,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             for (c in VietnamesePhonology.TONE_KEYS) p[c.code] = (p[c.code].toInt() or PROP_TONE).toByte()
             for (c in VietnamesePhonology.VOWEL_MOD_KEYS) p[c.code] = (p[c.code].toInt() or PROP_MOD).toByte()
             for (c in VietnamesePhonology.BASE_VOWELS) p[c.code] = (p[c.code].toInt() or PROP_VOWEL).toByte()
-            for (c in VietnamesePhonology.ONSET_LETTERS) p[c.code] = (p[c.code].toInt() or PROP_ONSET).toByte()
+            for (c in 0..511) { val ch = c.toChar(); if (OnsetMap.isValidOnsetSingle(ch)) p[ch.code] = (p[ch.code].toInt() or PROP_ONSET).toByte() }
             p['d'.code] = (p['d'.code].toInt() or PROP_D).toByte() // only d → handleKeyD; đ stays an onset
             // Boundary set == BoundaryClassifier: ASCII whitespace + separators +
             // NEL(133), NBSP(160), «(171), »(187) — all < 256.
@@ -747,14 +733,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun handleVowelChar(state: SyllableState, c: Char): Boolean {
         val lower = c.lowercaseChar()
 
-        // 0. q-prefix promotion: q typed first lands in rawSuffix (q isn't a standalone
-        //    consonant). When a vowel follows, promote it into a "qu" onset.
-        if (state.onset.isEmpty() && state.nucleus.isEmpty() && state.rawSuffix.isNotEmpty() &&
-            state.rawSuffix.last().lowercaseChar() == 'q') {
-            state.onset = state.rawSuffix.substring(state.rawSuffix.length - 1)
-            state.rawSuffix = state.rawSuffix.substring(0, state.rawSuffix.length - 1)
-        }
-
         // 1. Onset promotion: gi+V → onset "gi", V becomes nucleus; qu+V → onset "qu", V becomes nucleus
         val promotedOnset = VietnamesePhonology.lookupOnsetPromotion(state.onset, state.nucleus)
         if (promotedOnset != null && state.coda.isEmpty()) {
@@ -800,7 +778,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun handleConsonantChar(state: SyllableState, c: Char): Boolean {
         if (state.nucleus.isEmpty()) {
             val candidate = state.onset + c
-            if (VietnamesePhonology.isValidOnset(candidate)) {
+            if (OnsetMap.isValidOnset(candidate)) {
                 state.onset = candidate
                 state.lastToggle = null
                 return true

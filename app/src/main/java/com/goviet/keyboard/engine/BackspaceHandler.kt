@@ -101,7 +101,7 @@ object EditedVietnameseRecognizer {
 
         // Longest valid onset wins (ONSETS is ordered longest-first).
         var onsetLen = 0
-        for (cand in VietnamesePhonology.ONSETS) {
+        for (cand in OnsetMap.ALL_ONSETS) {
             if (stripped.startsWith(cand)) {
                 onsetLen = cand.length
                 break

@@ -498,7 +498,7 @@ class ImeInputConnectionController(
         // "th", "qu", "gi", ...) is a syllable seed, not a literal. Adopting it as
         // literal would lock the IME into Latin mode and "r" + "aw" would type
         // "raw" instead of composing "ră" — start a fresh Vietnamese composition.
-        val isVietnameseOnsetSeed = wordText.lowercase() in VietnamesePhonology.ONSETS
+        val isVietnameseOnsetSeed = OnsetMap.ALL_ONSETS.contains(wordText.lowercase())
         if (wordAtCursor != null && isAtEnd && wordText.isNotEmpty() && isVietnameseOnsetSeed && regionValid) {
             // Adopt the onset seed as a Vietnamese composition: replay the seed
             // keystrokes into the live state so the next character (vowel) extends
