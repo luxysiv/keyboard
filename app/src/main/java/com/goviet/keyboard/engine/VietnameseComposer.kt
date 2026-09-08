@@ -181,6 +181,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // ── Step 2–4: Vowel/fold processing ───────────────────────
         var lastFoldKey = '\u0000'   // fold key that last modified nucleus
         var lastFoldNucIdx = -1        // nucleus index where fold was applied
+        var lastFoldRawPos = -1        // raw text position of the fold key
         var lastToneKey = '\u0000'
 
         while (pos < len) {
@@ -480,7 +481,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     fun reDerive(text: String): String {
         if (text.isEmpty()) return ""
-        val buf = StringBuilder()
+        val buf = OwnedBuffer()
         val tempState = SyllableState()
         for (c in text) {
             if (c == ' ' || c == '\n' || c == '\t') {
@@ -492,7 +493,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
         }
         tempState.toDisplayBuffer(buf, options.oldTonePlacement)
-        return buf.toString()
+        return buf.toStringVal()
     }
 
     fun loadSyllable(state: SyllableState, isStaticReDerive: Boolean) {
@@ -706,6 +707,14 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     companion object {
         private val displayBuffer = ThreadLocal.withInitial { CharArray(32) }
+
+        @JvmStatic
+        fun isToneKey(c: Char): Boolean =
+            VietnamesePhonology.TONE_KEYS.indexOf(c.lowercaseChar()) >= 0
+
+        @JvmStatic
+        fun isVowelModifierKey(c: Char): Boolean =
+            c.lowercaseChar() in 'eoaw'
 
         private val NUCLEUS_RAW = arrayOf(
             "ươ" to "uwo", "ưa" to "uwa", "uơ" to "uow"
