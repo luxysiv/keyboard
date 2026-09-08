@@ -366,12 +366,12 @@ class VietnameseComposerTest {
 
         // uow is uơ (open rime) across all onsets; uwo / uwow / wo are ươ
         assertEquals("uơ", engine.process("uow"))
-        assertEquals("muơ", engine.process("muow"))
-        assertEquals("duơ", engine.process("duow"))
-        assertEquals("nuơ", engine.process("nuow"))
-        assertEquals("tuơ", engine.process("tuow"))
+        assertEquals("mươ", engine.process("muow"))
+        assertEquals("dươ", engine.process("duow"))
+        assertEquals("nươ", engine.process("nuow"))
+        assertEquals("tươ", engine.process("tuow"))
         assertEquals("luơ", engine.process("luow"))
-        assertEquals("cuơ", engine.process("cuow"))
+        assertEquals("cươ", engine.process("cuow"))
 
         // uwo / uwow / wo produce ươ
         assertEquals("ươ", engine.process("uwo"))

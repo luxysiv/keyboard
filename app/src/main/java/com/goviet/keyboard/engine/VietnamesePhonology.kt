@@ -500,28 +500,34 @@ object VietnamesePhonology {
      * Each W rule matches a pattern in the nucleus and transforms it.
      * Evaluated in order — first match wins.
      */
+    /** Onsets that allow the open rime "uơ" (without horn on U).
+     *  All other onsets must produce ươ (with horn on U) immediately. */
+    private val VALID_UO_ONSETS = setOf("", "h", "th", "kh", "qu", "l")
+
     private data class WPatternRule(
         val pattern: String,           // substring to match in nucleus (lowercase)
-        val transform: (String, String) -> Pair<String, VietnameseComposer.LastToggle?>?  // (nucleus, coda) → result
+        val transform: (String, String, String) -> Pair<String, VietnameseComposer.LastToggle?>?  // (nucleus, coda, onset) → result
     )
 
     private val W_PATTERN_CHAIN = arrayOf(
-        // uo/uơ → uơ (open) or ươ (with coda)
-        WPatternRule("uo") { nucleus, coda ->
+        // uo → uơ (open, only valid onsets) or ươ (with coda or invalid onset)
+        WPatternRule("uo") { nucleus, coda, onset ->
             val hasCoda = coda.isNotEmpty() || nucleus.lowercase() in setOf("uoi", "uou")
-            val transformed = buildUoPair(nucleus[0], nucleus[1], hornU = hasCoda)
+            // Only h, th, kh, qu, l and empty onset can produce the open rime uơ
+            val hornU = hasCoda || onset.lowercase() !in VALID_UO_ONSETS
+            val transformed = buildUoPair(nucleus[0], nucleus[1], hornU = hornU)
             val newNucleus = nucleus.replaceRange(0, 2, transformed)
             val newRime = newNucleus + coda
             if (VietnamesePhonology.isValidPrefix(newRime)) {
-                Pair(newNucleus, VietnameseComposer.LastToggle('w', VietnameseComposer.TargetType.W_NUCLEUS, hasCoda))
+                Pair(newNucleus, VietnameseComposer.LastToggle('w', VietnameseComposer.TargetType.W_NUCLEUS, hornU))
             } else null
         },
         // ươ already exists → no-op
-        WPatternRule("ươ") { nucleus, _ ->
+        WPatternRule("ươ") { nucleus, _, _ ->
             Pair(nucleus, null)
         },
         // ua → ưa
-        WPatternRule("ua") { nucleus, coda ->
+        WPatternRule("ua") { nucleus, coda, _ ->
             val uStr = if (nucleus[0].isUpperCase()) "Ư" else "ư"
             val aStr = if (nucleus.length > 1 && nucleus[1].isUpperCase()) "A" else "a"
             val newNucleus = nucleus.replaceRange(0, 2, uStr + aStr)
@@ -531,7 +537,7 @@ object VietnamesePhonology {
             } else null
         },
         // oa → oă
-        WPatternRule("oa") { nucleus, coda ->
+        WPatternRule("oa") { nucleus, coda, _ ->
             val oStr = if (nucleus[0].isUpperCase()) "O" else "o"
             val aStr = if (nucleus.length > 1 && nucleus[1].isUpperCase()) "Ă" else "ă"
             val newNucleus = nucleus.replaceRange(0, 2, oStr + aStr)
@@ -555,7 +561,7 @@ object VietnamesePhonology {
         // Priority chain: pattern rules evaluated in order, first match wins
         for (rule in W_PATTERN_CHAIN) {
             if (pLower.contains(rule.pattern)) {
-                val result = rule.transform(nucleus, withCoda)
+                val result = rule.transform(nucleus, withCoda, onset)
                 if (result != null) return result
                 // Pattern matched but transform failed validation → fall through
             }
