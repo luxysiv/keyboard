@@ -453,7 +453,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     }
 
     fun feedKey(composingRaw: StringBuilder, state: SyllableState, key: Char): Boolean {
-        composingRaw.append(key)
+        // Controller already appended key to composingRaw — just resegment.
         resegment(composingRaw, state)
         return true
     }
