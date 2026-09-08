@@ -714,7 +714,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         @JvmStatic
         fun isVowelModifierKey(c: Char): Boolean =
-            c.lowercaseChar() in 'eoaw'
+            c.lowercaseChar() in "eoaw"
 
         private val NUCLEUS_RAW = arrayOf(
             "ươ" to "uwo", "ưa" to "uwa", "uơ" to "uow"
