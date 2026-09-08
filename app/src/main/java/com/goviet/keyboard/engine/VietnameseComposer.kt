@@ -351,6 +351,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 else -> sb.append(onset)
             }
             sb.append(nucleusToRawKeystroke(nucleus))
+            val nucAllUpper = nucleus.isNotEmpty() && nucleus.all { it.isUpperCase() }
             sb.append(coda)
             val toneKey = when (validTone) {
                 Tone.ACUTE -> 's'; Tone.GRAVE -> 'f'; Tone.HOOK -> 'r'
