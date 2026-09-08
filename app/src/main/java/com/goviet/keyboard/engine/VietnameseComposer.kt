@@ -640,11 +640,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         isUpper: Boolean,
         isStaticReDerive: Boolean
     ): Boolean {
-        // Empty nucleus: fold modifiers can't do anything yet — let the character
-        // fall through to handleVowelChar so it becomes the nucleus.
-        // Exception: solo 'w' produces ư directly (handled in handleKeyW).
-        if (state.nucleus.isEmpty() && key != 'w') return false
-
         if (state.lastToggle?.key == key) {
             val toggle = state.lastToggle!!
             val untoggled = untoggleVowelModifier(state, toggle, key, isUpper)
