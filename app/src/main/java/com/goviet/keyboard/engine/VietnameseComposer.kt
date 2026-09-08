@@ -153,11 +153,14 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         val len = raw.length
         if (len == 0) return
 
-        // ── Step 1: Onset (longest valid prefix) ──────────────────
+        // ── Step 1: Onset (longest valid consonant prefix) ───────
+        // Single vowels (a, e, i, o, u, y, etc.) are NOT onsets — only consonants.
         val maxOnset = minOf(3, len)
         var onsetEnd = 0
         for (onsetLen in maxOnset downTo 1) {
             if (OnsetMap.isValidOnset(raw, 0, onsetLen)) {
+                // Single vowel char at start is NOT a valid onset
+                if (onsetLen == 1 && VietnamesePhonology.isBaseVowel(raw[0])) continue
                 onsetEnd = onsetLen
                 break
             }
@@ -232,19 +235,23 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 if (cLow == 'w' && out.nucleus.isEmpty()) {
                     val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
                     out.nucleus = wChar.toString()
-                    lastFoldKey = 'w'; lastFoldNucIdx = pos
+                    lastFoldKey = 'w'; lastFoldNucIdx = 0; lastFoldRawPos = pos
                     pos++; continue
                 }
-                // Vowel modifier: try fold rules FIRST (must happen before untoggle)
+                // Vowel modifier: try fold rules
                 if (cLow in FOLD_KEYS && out.nucleus.isNotEmpty()) {
                     if (applyFoldRules(c, pos, out)) {
-                        lastFoldKey = cLow; lastFoldNucIdx = pos
+                        lastFoldKey = cLow; lastFoldNucIdx = out.nucleus.indexOf(cLow.lowercaseChar()); lastFoldRawPos = pos
                         pos++; continue
                     }
-                    // Fold rejected → check if this is an untoggle (consecutive duplicate fold key)
-                    if (lastFoldKey != '\u0000' && cLow == lastFoldKey && pos == lastFoldNucIdx + 1 &&
-                        lastFoldNucIdx < out.nucleus.length && out.nucleus[lastFoldNucIdx] == lastFoldKey) {
-                        out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(lastFoldKey))
+                    // Fold rejected → check if this is an untoggle:
+                    // Only untoggle if the fold position still has the plain (unfolded) character.
+                    // If the character was folded (e.g. 'ê' instead of 'e'), a fold was applied
+                    // at that position and we should NOT untoggle — let the fold rules handle it.
+                    if (lastFoldKey != '\u0000' && cLow == lastFoldKey &&
+                        lastFoldNucIdx >= 0 && lastFoldNucIdx < out.nucleus.length &&
+                        out.nucleus[lastFoldNucIdx] == VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx])) {
+                        out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx]))
                         out.rawSuffix += c
                         lastFoldKey = '\u0000'; lastFoldNucIdx = -1; lastFoldRawPos = -1
                         pos++; continue
@@ -270,8 +277,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
 
             // ── Base vowel (not a fold key) → extend nucleus ──────
-            if (!isConsonant(cLow) && out.nucleus.isNotEmpty() && out.coda.isEmpty() &&
-                VietnamesePhonology.isBaseVowel(c)) {
+            if (!isConsonant(cLow) && VietnamesePhonology.isBaseVowel(c) && out.coda.isEmpty()) {
+                if (out.nucleus.isEmpty()) {
+                    // First vowel: start nucleus
+                    out.nucleus = c.toString()
+                    pos++; continue
+                }
                 val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
                 if (RimeMap.isValidPrefix(candidateKey)) {
                     out.nucleus += c
