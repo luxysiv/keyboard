@@ -12,7 +12,7 @@ object OnsetMap {
     // 5 bits → max 32 unique indices. This alphabet covers all Vietnamese
     // onset consonants so each char gets a unique index (no collisions).
     // 'w' is NOT an onset consonant; handled separately with W_INDEX.
-    private const val ONSET_ALPHA = "aăâeêioôơuưycmntpghbdkđlrsvx"
+    private const val ONSET_ALPHA = "aăâeêioôơuưycmntpghbdkđlrsvxq"
     private const val W_INDEX = ONSET_ALPHA.length  // 28
     private val CHAR_IDX = IntArray(512).also { arr ->
         for (i in ONSET_ALPHA.indices) arr[ONSET_ALPHA[i].code] = i
