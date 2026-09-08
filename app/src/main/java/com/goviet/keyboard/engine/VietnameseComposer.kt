@@ -246,7 +246,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         lastFoldNucIdx < out.nucleus.length && out.nucleus[lastFoldNucIdx] == lastFoldKey) {
                         out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(lastFoldKey))
                         out.rawSuffix += c
-                        lastFoldKey = '\u0000'; lastFoldNucIdx = -1
+                        lastFoldKey = '\u0000'; lastFoldNucIdx = -1; lastFoldRawPos = -1
                         pos++; continue
                     }
                 }
@@ -269,8 +269,26 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 out.rawSuffix += c; pos++; continue
             }
 
-            // ── Consonant: try coda or nucleus extension ──────────
+            // ── Base vowel (not a fold key) → extend nucleus ──────
+            if (!isConsonant(cLow) && out.nucleus.isNotEmpty() && out.coda.isEmpty() &&
+                VietnamesePhonology.isBaseVowel(c)) {
+                val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
+                if (RimeMap.isValidPrefix(candidateKey)) {
+                    out.nucleus += c
+                    pos++; continue
+                }
+            }
+
+            // ── Consonant: try nucleus extension THEN coda ───────
             if (isConsonant(cLow) && out.nucleus.isNotEmpty()) {
+                // Always try nucleus extension first (if no coda yet)
+                if (out.coda.isEmpty()) {
+                    val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
+                    if (RimeMap.isValidPrefix(candidateKey)) {
+                        out.nucleus += c; pos++; continue
+                    }
+                }
+                // Try as coda
                 val codaOk = if (out.coda.isEmpty()) {
                     cLow == 'm' || cLow == 'p' || cLow == 'n' || cLow == 't' || cLow == 'c'
                 } else if (out.coda.length == 1) {
@@ -283,12 +301,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     rk = RimeMap.extendKeySingle(rk, c)
                     if (RimeMap.isValidPrefix(rk) && RimeMap.isToneAllowed(rk, out.tone.index)) {
                         out.coda += c; pos++; continue
-                    }
-                }
-                if (out.coda.isEmpty()) {
-                    val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
-                    if (RimeMap.isValidPrefix(candidateKey)) {
-                        out.nucleus += c; pos++; continue
                     }
                 }
                 out.rawSuffix += c; pos++; continue
