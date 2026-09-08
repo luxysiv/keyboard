@@ -59,15 +59,8 @@ object OnsetMap {
     private fun build() {
         _keys = IntArray(TABLE_SIZE)
         _data = ByteArray(TABLE_SIZE)
-        // Mark single-char onsets that also start compounds as prefixes.
-        // 'q' is NOT a valid Vietnamese consonant (only 'qu' is), so it must
-        // not be inserted — it would collide with 'a' at index 0.
-        val firstChars = mutableSetOf<Char>()
-        for (o in ALL_ONSETS) if (o.length > 1) firstChars.add(o[0])
-        for (c in firstChars) {
-            if (find(onsetKey(c)) >= 0) insertOr(onsetKey(c), 0x02)
-        }
-        // Insert all complete onsets
+        // Insert all complete onsets (NO prefix entries for single chars
+        // like 'q' — those are handled by isPrefixOfCompound).
         for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
     }
 
@@ -95,6 +88,18 @@ object OnsetMap {
 
     /** Single character is valid onset or prefix of one. */
     fun isValidOnsetSingle(c: Char): Boolean = find(onsetKey(c)) >= 0
+
+    // First chars of compound onsets ("th","tr","ch","ph","kh","gh","gi","qu","ng","nh","ngh").
+    // Char-SET (not charIndex) so 'q' never collides with 'a' — both would
+    // encode to index 0 in the 5-bit alphabet.
+    private val COMPOUND_FIRST_CHARS = ALL_ONSETS.filter { it.length > 1 }.map { it[0].lowercaseChar() }.toSet()
+
+    /**
+     * Single char is the first char of a compound onset (e.g. 't' in "th").
+     * 'q' is included because "qu" is a valid onset — but 'q' is NOT returned
+     * as a complete onset, only as a prefix that can grow into "qu".
+     */
+    fun isPrefixOfCompound(c: Char): Boolean = c.lowercaseChar() in COMPOUND_FIRST_CHARS
 
     /** Complete valid onset (not just a prefix). */
     fun isCompleteOnset(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean {

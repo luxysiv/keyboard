@@ -412,7 +412,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             for (c in VietnamesePhonology.TONE_KEYS) p[c.code] = (p[c.code].toInt() or PROP_TONE).toByte()
             for (c in VietnamesePhonology.VOWEL_MOD_KEYS) p[c.code] = (p[c.code].toInt() or PROP_MOD).toByte()
             for (c in VietnamesePhonology.BASE_VOWELS) p[c.code] = (p[c.code].toInt() or PROP_VOWEL).toByte()
-            for (c in 0..511) { val ch = c.toChar(); if (OnsetMap.isValidOnsetSingle(ch)) p[ch.code] = (p[ch.code].toInt() or PROP_ONSET).toByte() }
+            for (c in 0..511) { val ch = c.toChar(); if (OnsetMap.isValidOnsetSingle(ch) || OnsetMap.isPrefixOfCompound(ch)) p[ch.code] = (p[ch.code].toInt() or PROP_ONSET).toByte() }
             p['d'.code] = (p['d'.code].toInt() or PROP_D).toByte() // only d → handleKeyD; đ stays an onset
             // Boundary set == BoundaryClassifier: ASCII whitespace + separators +
             // NEL(133), NBSP(160), «(171), »(187) — all < 256.
@@ -738,15 +738,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun handleVowelChar(state: SyllableState, c: Char): Boolean {
         val lower = c.lowercaseChar()
 
-        // 0. q-prefix promotion: 'q' is not a Vietnamese consonant, so it goes
-        //    to rawSuffix. When a vowel follows, move it to onset so that the
-        //    existing gi/qu promotion can build "qu" from onset="q" + nucleus="u".
-        if (state.onset.isEmpty() && state.nucleus.isEmpty() && state.rawSuffix.isNotEmpty() &&
-            state.rawSuffix.last().lowercaseChar() == 'q') {
-            state.onset = state.rawSuffix.substring(state.rawSuffix.length - 1)
-            state.rawSuffix = state.rawSuffix.substring(0, state.rawSuffix.length - 1)
-        }
-
         // 1. Onset promotion: gi+V → onset "gi", V becomes nucleus; qu+V → onset "qu", V becomes nucleus
         val promotedOnset = VietnamesePhonology.lookupOnsetPromotion(state.onset, state.nucleus)
         if (promotedOnset != null && state.coda.isEmpty()) {
@@ -792,7 +783,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun handleConsonantChar(state: SyllableState, c: Char): Boolean {
         if (state.nucleus.isEmpty()) {
             val candidate = state.onset + c
-            if (OnsetMap.isValidOnset(candidate)) {
+            if (OnsetMap.isValidOnset(candidate) || (candidate.length == 1 && OnsetMap.isPrefixOfCompound(candidate[0]))) {
                 state.onset = candidate
                 state.lastToggle = null
                 return true
