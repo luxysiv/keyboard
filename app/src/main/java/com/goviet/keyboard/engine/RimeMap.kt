@@ -163,7 +163,7 @@ object RimeMap {
             NucSpec("uy", C_UY,    1, 0), NucSpec("uâ", C_SHORT, 1, 1),
             NucSpec("uê", C_Y,     1, 1), NucSpec("uô", C_SHORT, 1, 1),
             NucSpec("uo", C_SHORT, 1, 1), NucSpec("ua", C_SHORT, 0),
-            NucSpec("ưa", C_NONE,  0),    NucSpec("uơ", C_NONE,  0),
+            NucSpec("ưa", C_NONE,  0),    NucSpec("uơ", C_NONE,  1),
             NucSpec("ươ", C_SHORT, 1, 1), NucSpec("ia", C_NONE,  0),
             NucSpec("ie", C_SHORT, 1, 1), NucSpec("iê", C_SHORT, 1, 1),
             NucSpec("ye", C_TMNG,  1, 1), NucSpec("yê", C_TMNG,  1, 1),

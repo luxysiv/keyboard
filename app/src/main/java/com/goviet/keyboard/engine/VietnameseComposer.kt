@@ -350,30 +350,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 "đ" -> sb.append(if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd")
                 else -> sb.append(onset)
             }
-            val nucleusLower = nucleus.lowercase()
-            val nucAllUpper = nucleus.isNotEmpty() && nucleus.all { it.isUpperCase() }
-            val nucFirstUpper = nucleus.isNotEmpty() && nucleus[0].isUpperCase()
-            if (nucleusLower == "ươ") {
-                sb.append(if (nucAllUpper) "UWO" else if (nucFirstUpper) "Uwo" else "uwo")
-            } else if (nucleusLower == "ưa") {
-                sb.append(if (nucAllUpper) "UWA" else if (nucFirstUpper) "Uwa" else "uwa")
-            } else if (nucleusLower == "uơ") {
-                sb.append(if (nucAllUpper) "UOW" else if (nucFirstUpper) "Uow" else "uow")
-            } else {
-                for (c in nucleus) {
-                    val cl = c.lowercaseChar()
-                    val isUpper = c.isUpperCase()
-                    when (cl) {
-                        'â' -> sb.append(if (isUpper) "Aa" else "aa")
-                        'ă' -> sb.append(if (isUpper) "Aw" else "aw")
-                        'ê' -> sb.append(if (isUpper) "Ee" else "ee")
-                        'ô' -> sb.append(if (isUpper) "Oo" else "oo")
-                        'ơ' -> sb.append(if (isUpper) "Ow" else "ow")
-                        'ư' -> sb.append(if (isUpper) "Uw" else "uw")
-                        else -> sb.append(c)
-                    }
-                }
-            }
+            sb.append(nucleusToRawKeystroke(nucleus))
             sb.append(coda)
             val toneKey = when (validTone) {
                 Tone.ACUTE -> 's'; Tone.GRAVE -> 'f'; Tone.HOOK -> 'r'
@@ -492,6 +469,62 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         /** Nucleus auto-promotion: uơ → ươ when consonant follows. */
         private val NUCLEUS_AUTOPROMOTIONS = mapOf("uơ" to true)
+
+        // ── Flat map: display nucleus → raw Telex keystroke (O(1)) ──────
+
+        /** Nucleus-level flat map: only nuclei where per-char decomposition fails.
+         *  "ươ" → "uwo" (NOT "uwow"; w folds u→ư, then o combines ư+o→ươ).
+         *  "ưa" and "uơ" decompose correctly per-char but kept here for clarity. */
+        private val NUCLEUS_RAW = arrayOf(
+            "ươ" to "uwo", "ưa" to "uwa", "uơ" to "uow"
+        ).toMap()
+
+        /** Per-char flat map: char code → packed raw keystroke (2 chars in 16 bits).
+         *  0 = no conversion (char typed directly, e.g. a, e, i, o, u, y).
+         *  Encoding: (rawChar0 shl 8) | rawChar1. Case applied at lookup time. */
+        private val CHAR_RAW = IntArray(512).also { a ->
+            fun p(c: Char, r0: Char, r1: Char) { a[c.code] = (r0.code shl 8) or r1.code }
+            p('â', 'a', 'a'); p('Ă', 'A', 'w'); p('ă', 'a', 'w'); p('Â', 'A', 'a')
+            p('ê', 'e', 'e'); p('Ê', 'E', 'e')
+            p('ô', 'o', 'o'); p('Ô', 'O', 'o')
+            p('ơ', 'o', 'w'); p('Ơ', 'O', 'w')
+            p('ư', 'u', 'w'); p('Ư', 'U', 'w')
+        }
+
+        /**
+         * Convert a display nucleus to raw Telex keystrokes via flat map.
+         * O(1) for nucleus-level match, O(n) per-char fallback.
+         * Replaces the if-else chain that was in adoptWord.
+         */
+        @JvmStatic
+        fun nucleusToRawKeystroke(nucleus: String): String {
+            if (nucleus.isEmpty()) return ""
+            val nucLower = nucleus.lowercase()
+            val raw = NUCLEUS_RAW[nucLower]
+            if (raw != null) {
+                val allUpper = nucleus.all { it.isUpperCase() }
+                val firstUpper = nucleus[0].isUpperCase()
+                return when {
+                    allUpper -> raw.uppercase()
+                    firstUpper -> raw.replaceFirstChar { it.uppercase() }
+                    else -> raw
+                }
+            }
+            // Per-character decomposition via flat array
+            val sb = StringBuilder()
+            for (c in nucleus) {
+                val packed = CHAR_RAW[c.code]
+                if (packed != 0) {
+                    val r0 = (packed ushr 8).toChar()
+                    val r1 = (packed and 0xFF).toChar()
+                    sb.append(if (c.isUpperCase()) r0.uppercaseChar() else r0)
+                    sb.append(r1)
+                } else {
+                    sb.append(c)
+                }
+            }
+            return sb.toString()
+        }
     }
 
     private fun applyKey(state: SyllableState, c: Char, isStaticReDerive: Boolean): Boolean {
