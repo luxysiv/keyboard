@@ -747,6 +747,14 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun handleVowelChar(state: SyllableState, c: Char): Boolean {
         val lower = c.lowercaseChar()
 
+        // 0. q-prefix promotion: q typed first lands in rawSuffix (q isn't a standalone
+        //    consonant). When a vowel follows, promote it into a "qu" onset.
+        if (state.onset.isEmpty() && state.nucleus.isEmpty() && state.rawSuffix.isNotEmpty() &&
+            state.rawSuffix.last().lowercaseChar() == 'q') {
+            state.onset = state.rawSuffix.substring(state.rawSuffix.length - 1)
+            state.rawSuffix = state.rawSuffix.substring(0, state.rawSuffix.length - 1)
+        }
+
         // 1. Onset promotion: gi+V → onset "gi", V becomes nucleus; qu+V → onset "qu", V becomes nucleus
         val promotedOnset = VietnamesePhonology.lookupOnsetPromotion(state.onset, state.nucleus)
         if (promotedOnset != null && state.coda.isEmpty()) {
@@ -792,7 +800,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun handleConsonantChar(state: SyllableState, c: Char): Boolean {
         if (state.nucleus.isEmpty()) {
             val candidate = state.onset + c
-            if (VietnamesePhonology.isValidOnset(candidate) || state.onset.isEmpty()) {
+            if (VietnamesePhonology.isValidOnset(candidate)) {
                 state.onset = candidate
                 state.lastToggle = null
                 return true

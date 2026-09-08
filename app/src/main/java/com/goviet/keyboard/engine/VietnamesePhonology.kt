@@ -32,7 +32,7 @@ object VietnamesePhonology {
      * These are valid Vietnamese onsets OR literal consonants (f,j,w,z excluded
      * as non-Vietnamese → raw text; handled at the filter level).
      */
-    val ONSET_LETTERS = "bcdđghklmnprstvxq"
+    val ONSET_LETTERS = "bcdđghklmnprstvx"
 
     private val VOWELS = setOf(
         'a', 'ă', 'â', 'e', 'ê', 'i', 'y', 'o', 'ô', 'ơ', 'u', 'ư',
