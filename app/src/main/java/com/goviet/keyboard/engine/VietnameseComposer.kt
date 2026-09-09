@@ -158,7 +158,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var i = from
         while (i < raw.length) {
             val c = raw[i].lowercaseChar()
-            if (c in 'a'..'z' && isConsonant(c)) { sb.append(c); i++ }
+            // Check functional keys FIRST — they're not coda chars
+            if (c in FOLD_KEYS || VietnamesePhonology.TONE_KEYS.indexOf(c) >= 0) {
+                i++; continue
+            }
+            if (isConsonant(c)) { sb.append(c); i++ }
             else break
         }
         return sb.toString()
@@ -215,6 +219,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var lastToneKey = '\u0000'
         var syllableLocked = false  // true after a tone key is cancelled to rawSuffix
         var justUntoggled = false  // true after fold→untoggle, prevents immediate re-fold
+        var toneLocked = false  // true after tone key rejected (not cancelled) for invalid rime
 
         while (pos < len) {
             val c = raw[pos]
@@ -247,6 +252,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
             // ── Tone handling ──────────────────────────────────────
             if (VietnamesePhonology.TONE_KEYS.indexOf(cLow) >= 0) {
+                if (toneLocked) { out.rawSuffix += c; pos++; continue }
                 val targetTone = Tone.fromKey(cLow)
                 if (targetTone != null && out.nucleus.isNotEmpty()) {
                     if (out.nucleus.length >= 2) {
@@ -264,17 +270,18 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         } else {
                             out.rawSuffix += c
                         }
-                        syllableLocked = true
+                        toneLocked = true
                         pos++; continue
                     }
                     val rk = buildRimeKey(out.nucleus, out.coda)
                     if (VietnamesePhonology.isRimeHashValidForTone(rk.toLong(), targetTone)) {
                         out.tone = targetTone
                         lastToneKey = cLow
+                        toneLocked = false
                         syllableLocked = false
                     } else {
                         out.rawSuffix += c
-                        syllableLocked = true
+                        toneLocked = true
                     }
                     pos++; continue
                 }
@@ -316,7 +323,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     }
                 }
                 // Vowel combination
-                if (out.nucleus.isNotEmpty()) {
+                if (!syllableLocked && out.nucleus.isNotEmpty() && cLow != 'w') {
                     val combo = VietnamesePhonology.lookupVowelCombination(out.nucleus, c)
                     if (combo != null) {
                         out.nucleus = combo
@@ -334,7 +341,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     }
                 }
                 // Fold key that is a consonant: try coda before rawSuffix
-                if (isConsonant(cLow) && out.nucleus.isNotEmpty() && out.coda.isEmpty()) {
+                if (isConsonant(cLow) && out.nucleus.isNotEmpty() && out.coda.isEmpty() && !syllableLocked) {
                     val candidateKey = RimeMap.rimeKey(out.nucleus + c.toString())
                     if (RimeMap.isValidPrefix(candidateKey)) { out.nucleus += c; pos++; continue }
                 }
@@ -386,7 +393,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
 
             // ── Any other char → rawSuffix ────────────────────────
-            out.rawSuffix += c; pos++
+            out.rawSuffix += c; syllableLocked = true; pos++
         }
 
     }
@@ -429,6 +436,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         if (cLow == 'o') {
             val idx = findFoldTarget(nucLower, charArrayOf('o', 'ơ'))
             if (idx >= 0 && nucLower[idx] != 'ô') {
+                // Skip o→ô if preceded by 'u' (uo/ua compound handled by w handler)
+                if (idx > 0 && nucLower[idx - 1] == 'u') return -1
                 val replacement = if (nuc[idx].isUpperCase()) 'Ô' else 'ô'
                 val newNuc = replaceAt(nuc, idx, replacement)
                 if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return idx }
@@ -442,16 +451,18 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             // With lookahead: test both variants against predicted tail via RimeMap.
             // Without lookahead: apply onset-based heuristic.
             val uoIdx = findFoldTarget(nucLower, charArrayOf('u'))
-            if (uoIdx >= 0 && uoIdx + 1 < nuc.length && nucLower[uoIdx + 1] == 'o') {
+            if (uoIdx >= 0 && uoIdx + 1 < nuc.length && (nucLower[uoIdx + 1] == 'o' || nucLower[uoIdx + 1] == 'ô')) {
+                // If vowel combo already fired (uô), normalize back to 'uo' for fold
+                val normNuc = if (nucLower[uoIdx + 1] == 'ô') replaceAt(nuc, uoIdx + 1, 'o') else nuc
                 val uoHasCoda = out.coda.isNotEmpty()
                 val uoShouldHorn = uoHasCoda || onsetLower !in VALID_UO_ONSETS
                 val predictedTail = predictConsonantTail(raw, pos + 1)
                 if (predictedTail.isNotEmpty()) {
                     // RimeMap-based: pick variant whose rime (with predicted tail) is valid
-                    val hornNuc = nuc.replaceRange(uoIdx, uoIdx + 2,
-                        VietnamesePhonology.buildUoPair(nuc[uoIdx], nuc[uoIdx + 1], true))
-                    val noHornNuc = nuc.replaceRange(uoIdx, uoIdx + 2,
-                        VietnamesePhonology.buildUoPair(nuc[uoIdx], nuc[uoIdx + 1], false))
+                    val hornNuc = normNuc.replaceRange(uoIdx, uoIdx + 2,
+                        VietnamesePhonology.buildUoPair(normNuc[uoIdx], normNuc[uoIdx + 1], true))
+                    val noHornNuc = normNuc.replaceRange(uoIdx, uoIdx + 2,
+                        VietnamesePhonology.buildUoPair(normNuc[uoIdx], normNuc[uoIdx + 1], false))
                     val hornValid = isValidRime(hornNuc, out.coda + predictedTail)
                     val noHornValid = isValidRime(noHornNuc, out.coda + predictedTail)
                     val chosen = when {
@@ -466,10 +477,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (chosen != null) { out.nucleus = chosen; return uoIdx }
                 } else {
                     // No lookahead: try both variants via RimeMap, prefer heuristic match
-                    val hornNuc = nuc.replaceRange(uoIdx, uoIdx + 2,
-                        VietnamesePhonology.buildUoPair(nuc[uoIdx], nuc[uoIdx + 1], true))
-                    val noHornNuc = nuc.replaceRange(uoIdx, uoIdx + 2,
-                        VietnamesePhonology.buildUoPair(nuc[uoIdx], nuc[uoIdx + 1], false))
+                    val hornNuc = normNuc.replaceRange(uoIdx, uoIdx + 2,
+                        VietnamesePhonology.buildUoPair(normNuc[uoIdx], normNuc[uoIdx + 1], true))
+                    val noHornNuc = normNuc.replaceRange(uoIdx, uoIdx + 2,
+                        VietnamesePhonology.buildUoPair(normNuc[uoIdx], normNuc[uoIdx + 1], false))
                     val hornValid = isValidRime(hornNuc, out.coda)
                     val noHornValid = isValidRime(noHornNuc, out.coda)
                     val chosen = when {
@@ -513,19 +524,23 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (isValidRime(hornNuc, out.coda)) { out.nucleus = hornNuc; return oaIdx }
                 }
             }
-            // Single-tile: o→ơ (not ô,ơ), u→ư (not ư, not after q), a→ă (not ă,â)
-            val oIdx = findFoldTarget(nucLower, charArrayOf('o'))
-            if (oIdx >= 0 && nucLower[oIdx] != 'ơ' && nucLower[oIdx] != 'ô') {
-                val replacement = if (nuc[oIdx].isUpperCase()) 'Ơ' else 'ơ'
-                val newNuc = replaceAt(nuc, oIdx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return oIdx }
-            }
+            // Single-tile: u→ư (not ư, not after q, not before o/a — compound handled above)
             val uIdx = findFoldTarget(nucLower, charArrayOf('u'))
-            if (uIdx >= 0 && nucLower[uIdx] != 'ư' && onsetLower != "q") {
+            if (uIdx >= 0 && nucLower[uIdx] != 'ư' && onsetLower != "q"
+                && !(uIdx + 1 < nuc.length && (nucLower[uIdx + 1] == 'o' || nucLower[uIdx + 1] == 'a'))) {
                 val replacement = if (nuc[uIdx].isUpperCase()) 'Ư' else 'ư'
                 val newNuc = replaceAt(nuc, uIdx, replacement)
                 if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return uIdx }
             }
+            // o→ơ (not ô,ơ, not after u — compound handled above)
+            val oIdx = findFoldTarget(nucLower, charArrayOf('o'))
+            if (oIdx >= 0 && nucLower[oIdx] != 'ơ' && nucLower[oIdx] != 'ô'
+                && !(oIdx > 0 && nucLower[oIdx - 1] == 'u')) {
+                val replacement = if (nuc[oIdx].isUpperCase()) 'Ơ' else 'ơ'
+                val newNuc = replaceAt(nuc, oIdx, replacement)
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return oIdx }
+            }
+            // a→ă (not ă,â)
             val aIdx = findFoldTarget(nucLower, charArrayOf('a'))
             if (aIdx >= 0 && nucLower[aIdx] != 'ă' && nucLower[aIdx] != 'â') {
                 val replacement = if (nuc[aIdx].isUpperCase()) 'Ă' else 'ă'
