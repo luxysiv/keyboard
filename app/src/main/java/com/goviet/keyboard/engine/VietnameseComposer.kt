@@ -305,6 +305,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         pos++; continue
                     }
                 }
+                // Fold key that is a consonant: try coda before rawSuffix
+                if (isConsonant(cLow) && out.nucleus.isNotEmpty() && out.coda.isEmpty()) {
+                    val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
+                    if (RimeMap.isValidPrefix(candidateKey)) { out.nucleus += c; pos++; continue }
+                }
                 out.rawSuffix += c; pos++; continue
             }
 
@@ -361,6 +366,63 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             // ── Any other char → rawSuffix ────────────────────────
             out.rawSuffix += c; pos++
         }
+
+        // Post-processing: reclaim rime chars from rawSuffix
+        if (out.nucleus.isNotEmpty() && out.rawSuffix.isNotEmpty()) {
+            var reclaimPos = 0
+            while (reclaimPos < out.rawSuffix.length) {
+                val rc = out.rawSuffix[reclaimPos]
+                val rcLow = rc.lowercaseChar()
+                val isVowel = VietnamesePhonology.isBaseVowel(rc)
+                val isConsonantChar = isConsonant(rcLow)
+                if (!isVowel && !isConsonantChar) break
+                if (out.coda.isEmpty()) {
+                    val k = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), rc)
+                    if (RimeMap.isValidPrefix(k)) {
+                        out.nucleus += rc; reclaimPos++; continue
+                    }
+                }
+                if (isConsonantChar) {
+                    var codaOk = false
+                    if (out.coda.isEmpty()) codaOk = rcLow in charArrayOf('m','p','n','t','c')
+                    else if (out.coda.length == 1) {
+                        val c0 = out.coda[0].lowercaseChar()
+                        codaOk = (c0 == 'n' && (rcLow == 'g' || rcLow == 'h')) || (c0 == 'c' && rcLow == 'h')
+                    }
+                    if (codaOk) {
+                        val k = buildRimeKey(out.nucleus, out.coda.toString() + rc)
+                        if (RimeMap.isValidPrefix(k)) {
+                            out.coda += rc; reclaimPos++; continue
+                        }
+                    }
+                }
+                break
+            }
+            if (reclaimPos > 0) out.rawSuffix = out.rawSuffix.substring(reclaimPos)
+        }
+
+        // Deferred rime re-fold: try alternative fold variants to produce
+        // a valid complete rime when the initial fold was suboptimal.
+        // E.g. "uơ" + rawSuffix "ng" → re-fold to "ươ" + "ng" = "ương".
+        if (out.nucleus.isNotEmpty() && out.rawSuffix.isNotEmpty()) {
+            val nucLower = out.nucleus.lowercase()
+            val hornCandidates = arrayOf("uơ" to "ươ", "ươ" to "uơ", "oă" to "oa")
+            for ((from, to) in hornCandidates) {
+                if (nucLower.contains(from)) {
+                    val newNuc = out.nucleus.replace(from, to)
+                    for (cdLen in 1..out.rawSuffix.length) {
+                        val candidateCoda = out.rawSuffix.substring(0, cdLen)
+                        if (candidateCoda.all { it.lowercaseChar() in charArrayOf('m','p','n','t','c','g','h') }) {
+                            val rk = buildRimeKey(newNuc, out.coda.toString() + candidateCoda)
+                            if (RimeMap.isComplete(rk)) {
+                                out.nucleus = newNuc
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /** Build composite rime key for nucleus + coda. */
@@ -414,9 +476,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             // uo → uơ or ươ
             val uoIdx = findFoldTarget(nucLower, charArrayOf('u'))
             if (uoIdx >= 0 && uoIdx + 1 < nuc.length && nucLower[uoIdx + 1] == 'o') {
+                // hasCoda: detect consonants after "uo" in nucleus (merged coda)
+                // 'i','u' are offglides (not codas); any other char means coda
                 val hasCoda = out.coda.isNotEmpty() ||
-                    (uoIdx + 2 < nucLower.length && nucLower[uoIdx + 2] == 'i') ||
-                    (uoIdx + 2 < nucLower.length && nucLower[uoIdx + 2] == 'u')
+                    (uoIdx + 2 < nucLower.length && nucLower[uoIdx + 2] != 'i' && nucLower[uoIdx + 2] != 'u')
                 val hornU = hasCoda || onsetLower !in VALID_UO_ONSETS
                 val transformed = VietnamesePhonology.buildUoPair(nuc[uoIdx], nuc[uoIdx + 1], hornU)
                 val newNuc = nuc.replaceRange(uoIdx, uoIdx + 2, transformed)
