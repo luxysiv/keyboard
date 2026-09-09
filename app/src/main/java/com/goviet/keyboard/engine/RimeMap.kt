@@ -22,14 +22,17 @@ object RimeMap {
     // Index 0..27 = Vietnamese chars; 28 = PADDING (for shorter keys).
     // 5 bits per char, max 5 chars → 25-bit key (fits Int).
 
-    /** Rime-alphabet character set: a ă â e ê i o ô ơ u ư y c ch g h m n ng nh p t */
-    private const val RIME_ALPHA = "aăâeêioôơuưycmntpgh"
+    /** Rime-alphabet character set: a ă â e ê i o ô ơ u ư y c ch g h m n ng nh p t + l r s j x q.
+     *  The last five are never part of a valid rime string, but they ARE typed into the
+     *  raw buffer — without unique indices they'd encode as index 0 (='a') and produce
+     *  false-positive flatmap hits (e.g. rimeKey("ul") == rimeKey("ua"), rimeKey("lu") == "au"). */
+    private const val RIME_ALPHA = "aăâeêioôơuưycmntpghlrsjxq"
 
     /** Unique index for 'w' — prevents collision with 'a' (index 0) in packed keys.
      *  'w' never appears in valid Vietnamese rimes, but after an untoggle (e.g. uww → uw)
      *  it can appear in the nucleus string. Without this, rimeKey("uw") == rimeKey("ua")
      *  causing false-positive tone/coda lookups on the untoggled literal. */
-    private const val W_INDEX = 19
+    private const val W_INDEX = 25
 
     /** 5-bit index for each Vietnamese rime character.  Non-rime chars → 0 (maps to 'a'). */
     private val CHAR_IDX = IntArray(512).also { arr ->
@@ -139,40 +142,53 @@ object RimeMap {
             val tnOld: Int = tnNew
         )
 
-        // Coda groups from the phonology table
-        val C_ALL    = arrayOf("c","ch","p","t","m","n","ng","nh")
-        val C_SHORT  = arrayOf("c","p","t","m","n","ng")
-        val C_Y      = arrayOf("t","ch","n","nh")
-        val C_UY     = arrayOf("p","t","ch","n","nh")
-        val C_TMNG   = arrayOf("t","m","n","ng")
-        val C_COVER  = arrayOf("c","n","ng","m","p","t")
-        val C_NONE   = emptyArray<String>()
+        // Coda groups — exact pairs that actually exist in Vietnamese
+        // (verified against the 17,974-syllable corpus; NOT the full Cartesian product).
+        //   c/ch/p/t = stop codas → only Sắc+Nặng tones
+        //   m/n/ng/nh = nasal codas → 6 tones
+        val C_ALL   = arrayOf("c","ch","p","t","m","n","ng","nh") // a, ê, oa
+        val C_SHORT = arrayOf("c","p","t","m","n","ng")           // ă, â, o, ô, u, uô, ươ, iê, uo, ie
+        val C_I     = arrayOf("ch","p","t","m","n","nh")          // i (no c, no ng)
+        val C_O5    = arrayOf("p","t","m","n")                    // ơ (no c, no ng)
+        val C_U8    = arrayOf("c","m","n","ng","t")               // ư (no p)
+        val C_Y     = arrayOf("p","t","ch","n","nh")              // y
+        val C_OE    = arrayOf("m","n","t")                        // oe
+        val C_OA5   = arrayOf("c","m","n","ng","t")               // oă (no p)
+        val C_UE    = arrayOf("ch","nh")                          // ue, uê
+        val C_UA4   = arrayOf("n","ng","t")                       // uâ
+        val C_UY2   = arrayOf("p","t","ch","n","nh")              // uy
+        val C_OO    = arrayOf("c","ng")                           // oo (coong, xoóc)
+        val C_UYE   = arrayOf("n","t")                            // uye/uyê
+        val C_TMNG  = arrayOf("t","m","n","ng")                   // ye/yê (pre-fold raw)
+        val C_NONE  = emptyArray<String>()
 
         val NUCLEI = arrayOf(
-            // Single vowels — tone on the vowel itself (pos 0)
-            NucSpec("a",  C_ALL,   0),    NucSpec("ă",  C_SHORT, 0),
-            NucSpec("â",  C_SHORT, 0),    NucSpec("e",  C_ALL,   0),
-            NucSpec("ê",  C_ALL,   0),    NucSpec("i",  C_ALL,   0),
-            NucSpec("o",  C_SHORT, 0),    NucSpec("ô",  C_SHORT, 0),
-            NucSpec("ơ",  C_SHORT, 0),    NucSpec("u",  C_SHORT, 0),
-            NucSpec("ư",  C_SHORT, 0),    NucSpec("y",  C_Y,     0),
+            // ── Single vowels — tone on the vowel itself (pos 0) ──
+            NucSpec("a",  C_ALL,   0), NucSpec("ă",  C_SHORT, 0),
+            NucSpec("â",  C_SHORT, 0), NucSpec("e",  C_SHORT, 0),
+            NucSpec("ê",  C_ALL,   0), NucSpec("i",  C_I,     0),
+            NucSpec("o",  C_SHORT, 0), NucSpec("ô",  C_SHORT, 0),
+            NucSpec("ơ",  C_O5,    0), NucSpec("u",  C_SHORT, 0),
+            NucSpec("ư",  C_U8,    0), NucSpec("y",  C_Y,     0),
 
-            // Digraphs — tone on 2nd vowel (pos 1)
-            NucSpec("oa", C_ALL,   1, 0), NucSpec("oă", C_SHORT, 1, 0),
-            NucSpec("oe", C_SHORT, 1, 0), NucSpec("ue", C_ALL,   1, 0),
-            NucSpec("uy", C_UY,    1, 0), NucSpec("uâ", C_SHORT, 1, 1),
-            NucSpec("uê", C_Y,     1, 1), NucSpec("uô", C_SHORT, 1, 1),
-            NucSpec("uo", C_SHORT, 1, 1), NucSpec("ua", C_SHORT, 0),
-            NucSpec("ưa", C_NONE,  0),    NucSpec("uơ", C_NONE,  1),
-            NucSpec("ươ", C_SHORT, 1, 1), NucSpec("ia", C_NONE,  0),
-            NucSpec("ie", C_SHORT, 1, 1), NucSpec("iê", C_SHORT, 1, 1),
-            NucSpec("ye", C_TMNG,  1, 1), NucSpec("yê", C_TMNG,  1, 1),
-            NucSpec("oo", C_COVER, 1, 1),
+            // ── Digraph nuclei — tone on main vowel (modern) ──────
+            // (glide + main). Tone position follows the s.ngonngu.net
+            // canonical table: oa/oai→a, oe→e, uy→y, iê/uô/ươ→2nd char.
+            NucSpec("oa", C_ALL,   1, 0), NucSpec("oă", C_OA5,  1, 0),
+            NucSpec("oe", C_OE,    1, 0), NucSpec("ue", C_UE,   1, 0),
+            NucSpec("uy", C_UY2,   1, 0), NucSpec("uâ", C_UA4,  1, 1),
+            NucSpec("uê", C_UE,    1, 1), NucSpec("uô", C_SHORT,1, 1),
+            NucSpec("uo", C_SHORT, 1, 1), NucSpec("ua", C_NONE, 0),
+            NucSpec("ưa", C_NONE,  0),    NucSpec("uơ", C_NONE, 1),
+            NucSpec("ươ", C_SHORT, 1, 1), NucSpec("ia", C_NONE, 0),
+            NucSpec("ie", C_SHORT, 1, 1), NucSpec("iê", C_SHORT,1, 1),
+            NucSpec("ye", C_TMNG,  1, 1), NucSpec("yê", C_TMNG, 1, 1),
+            NucSpec("oo", C_OO,    1, 1),
 
-            // Trigraphs — tone on middle vowel (pos 2)
-            NucSpec("uye", C_ALL,  2),    NucSpec("uyê", C_ALL,  2),
+            // ── Trigraph nuclei — tone on middle vowel (pos 2) ────
+            NucSpec("uye", C_UYE,  2),    NucSpec("uyê", C_UYE, 2),
 
-            // Open codas (no final consonant) — no complete rime
+            // ── Open rimes (no final consonant) ────────────────────
             NucSpec("ai",  C_NONE, 0), NucSpec("ao",  C_NONE, 0),
             NucSpec("au",  C_NONE, 0), NucSpec("ay",  C_NONE, 0),
             NucSpec("âu",  C_NONE, 0), NucSpec("ây",  C_NONE, 0),
@@ -181,8 +197,6 @@ object RimeMap {
             NucSpec("oi",  C_NONE, 0), NucSpec("ôi",  C_NONE, 0),
             NucSpec("ơi",  C_NONE, 0), NucSpec("ui",  C_NONE, 0),
             NucSpec("uu",  C_NONE, 0), NucSpec("ưi",  C_NONE, 0),
-
-            // Open codas with digraph nuclei — tone pos 1
             NucSpec("ieu", C_NONE, 1), NucSpec("iêu", C_NONE, 1),
             NucSpec("yeu", C_NONE, 1), NucSpec("yêu", C_NONE, 1),
             NucSpec("uoi", C_NONE, 1), NucSpec("uôi", C_NONE, 1),
@@ -224,21 +238,29 @@ object RimeMap {
     private fun countEntries(): Int {
         val C_ALL = arrayOf("c","ch","p","t","m","n","ng","nh")
         val C_SHORT = arrayOf("c","p","t","m","n","ng")
-        val C_Y = arrayOf("t","ch","n","nh")
-        val C_UY = arrayOf("p","t","ch","n","nh")
+        val C_I = arrayOf("ch","p","t","m","n","nh")
+        val C_O5 = arrayOf("p","t","m","n")
+        val C_U8 = arrayOf("c","m","n","ng","t")
+        val C_Y = arrayOf("p","t","ch","n","nh")
+        val C_OE = arrayOf("m","n","t")
+        val C_OA5 = arrayOf("c","m","n","ng","t")
+        val C_UE = arrayOf("ch","nh")
+        val C_UA4 = arrayOf("n","ng","t")
+        val C_UY2 = arrayOf("p","t","ch","n","nh")
+        val C_OO = arrayOf("c","ng")
+        val C_UYE = arrayOf("n","t")
         val C_TMNG = arrayOf("t","m","n","ng")
-        val C_COVER = arrayOf("c","n","ng","m","p","t")
         val C_NONE = emptyArray<String>()
 
         data class S(val n: String, val c: Array<String>)
         val nuclei = arrayOf(
-            S("a",C_ALL),S("ă",C_SHORT),S("â",C_SHORT),S("e",C_ALL),S("ê",C_ALL),S("i",C_ALL),
-            S("o",C_SHORT),S("ô",C_SHORT),S("ơ",C_SHORT),S("u",C_SHORT),S("ư",C_SHORT),S("y",C_Y),
-            S("oa",C_ALL),S("oă",C_SHORT),S("oe",C_SHORT),S("ue",C_ALL),S("uy",C_UY),
-            S("uâ",C_SHORT),S("uê",C_Y),S("uô",C_SHORT),S("uo",C_SHORT),S("ua",C_SHORT),
+            S("a",C_ALL),S("ă",C_SHORT),S("â",C_SHORT),S("e",C_SHORT),S("ê",C_ALL),S("i",C_I),
+            S("o",C_SHORT),S("ô",C_SHORT),S("ơ",C_O5),S("u",C_SHORT),S("ư",C_U8),S("y",C_Y),
+            S("oa",C_ALL),S("oă",C_OA5),S("oe",C_OE),S("ue",C_UE),S("uy",C_UY2),
+            S("uâ",C_UA4),S("uê",C_UE),S("uô",C_SHORT),S("uo",C_SHORT),S("ua",C_NONE),
             S("ưa",C_NONE),S("uơ",C_NONE),S("ươ",C_SHORT),S("ia",C_NONE),
-            S("ie",C_SHORT),S("iê",C_SHORT),S("ye",C_TMNG),S("yê",C_TMNG),S("oo",C_COVER),
-            S("uye",C_ALL),S("uyê",C_ALL),
+            S("ie",C_SHORT),S("iê",C_SHORT),S("ye",C_TMNG),S("yê",C_TMNG),S("oo",C_OO),
+            S("uye",C_UYE),S("uyê",C_UYE),
             S("ai",C_NONE),S("ao",C_NONE),S("au",C_NONE),S("ay",C_NONE),
             S("âu",C_NONE),S("ây",C_NONE),S("eo",C_NONE),S("eu",C_NONE),
             S("êu",C_NONE),S("iu",C_NONE),S("oi",C_NONE),S("ôi",C_NONE),

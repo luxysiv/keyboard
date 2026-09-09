@@ -224,6 +224,36 @@ class VietnameseComposerTest {
     }
 
     @Test
+    fun testLiteralOrderingAndHardLock() {
+        // Non-Vietnamese strings must stay in raw order (no nucleus/coda built
+        // after a rejected char: plus/player/tja/rossi/purra/logic/engine).
+        assertEquals("plus", engine.process("plus"))
+        assertEquals("player", engine.process("player"))
+        assertEquals("double", engine.process("double"))
+        assertEquals("tja", engine.process("tja"))
+        assertEquals("rossi", engine.process("rosi"))
+        assertEquals("purra", engine.process("pura"))
+        assertEquals("logic", engine.process("logic"))
+        assertEquals("engine", engine.process("engine"))
+        assertEquals("pluss", engine.process("pluss"))
+        assertEquals("engin", engine.process("engin"))
+
+        // vanw -> văn ; vanwa -> vân (fold, not back to raw)
+        assertEquals("văn", engine.process("vanw"))
+        assertEquals("vân", engine.process("vanwa"))
+    }
+
+    @Test
+    fun testSecondWAfterCompoundFoldIsAbsorbed() {
+        // hoạt động: gõ h u o w w n g s -> hướng (2nd w absorbed)
+        assertEquals("hướng", engine.process("huowngs"))
+        assertEquals("hướng", engine.process("huowwngs"))
+        assertEquals("uơ", engine.process("uoww"))
+        assertEquals("thuơ", engine.process("thuoww"))
+        assertEquals("bươ", engine.process("buoww"))
+    }
+
+    @Test
     fun testIncrementalProcessKey() {
         engine.reset()
         assertEquals("t", engine.processKey('t').text)

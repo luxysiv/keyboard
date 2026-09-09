@@ -168,6 +168,13 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return sb.toString()
     }
 
+    /** True if the nucleus already contains a w-compound (uơ, ươ, ưa, oă). */
+    private fun nucHasWCompound(nucleus: String): Boolean {
+        val n = nucleus.lowercase()
+        return n.contains("ươ") || n.contains("uơ") ||
+            n.contains("ưa") || n.contains("oă")
+    }
+
     private fun resegment(raw: CharSequence, out: SyllableState) {
         out.reset()
         val len = raw.length
@@ -217,7 +224,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var lastFoldNucIdx = -1        // nucleus index where fold was applied
         var lastFoldRawPos = -1        // raw text position of the fold key
         var lastToneKey = '\u0000'
-        var syllableLocked = false  // true after a tone key is cancelled to rawSuffix
+        var syllableLocked = false  // once any char is rejected, the rest of the syllable is literal
         var justUntoggled = false  // true after fold→untoggle, prevents immediate re-fold
         var toneLocked = false  // true after tone key rejected (not cancelled) for invalid rime
 
@@ -226,7 +233,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             val cLow = c.lowercaseChar()
 
             // ── Consecutive 'd' / onset fold → đ ────────────────────
-            if (c == 'd' || c == 'D') {
+            if ((c == 'd' || c == 'D') && !syllableLocked) {
                 val oLower = out.onset.lowercase()
                 if (oLower.endsWith('d') && out.onset != "Đ") {
                     // Fold: 'd' onset → 'Đ'
@@ -237,14 +244,16 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     // Untoggle: 'Đ' → 'd' + literal 'd'
                     out.onset = if (raw[0].isUpperCase()) "D" else "d"
                     out.rawSuffix += c
+                    syllableLocked = true
                     pos++; continue
                 }
             }
 
             // ── Consecutive 'd' untoggle (between vowels/codas) ─────
-            if (c == 'd' && pos + 1 < len && raw[pos + 1] == 'd') {
+            if (!syllableLocked && c == 'd' && pos + 1 < len && raw[pos + 1] == 'd') {
                 if (pos + 2 >= len || isConsonant(raw[pos + 2])) {
                     out.rawSuffix += "dd"
+                    syllableLocked = true
                     pos += 2
                     continue
                 }
@@ -252,14 +261,14 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
             // ── Tone handling ──────────────────────────────────────
             if (VietnamesePhonology.TONE_KEYS.indexOf(cLow) >= 0) {
-                if (toneLocked) { out.rawSuffix += c; pos++; continue }
+                if (toneLocked) { out.rawSuffix += c; syllableLocked = true; pos++; continue }
                 val targetTone = Tone.fromKey(cLow)
                 if (targetTone != null && out.nucleus.isNotEmpty()) {
                     if (out.nucleus.length >= 2) {
                         val n0 = out.nucleus[0].lowercaseChar()
                         val n1 = out.nucleus[1].lowercaseChar()
                         if ((n0 == 'a' && n1 == 'a') || (n0 == 'e' && n1 == 'e')) {
-                            out.rawSuffix += c; pos++; continue
+                            out.rawSuffix += c; syllableLocked = true; pos++; continue
                         }
                     }
                     if (lastToneKey != '\u0000' && cLow == lastToneKey) {
@@ -271,6 +280,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                             out.rawSuffix += c
                         }
                         toneLocked = true
+                        syllableLocked = true
                         pos++; continue
                     }
                     val rk = buildRimeKey(out.nucleus, out.coda)
@@ -278,31 +288,38 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         out.tone = targetTone
                         lastToneKey = cLow
                         toneLocked = false
-                        syllableLocked = false
                     } else {
                         out.rawSuffix += c
                         toneLocked = true
+                        syllableLocked = true
                     }
                     pos++; continue
                 }
-                out.rawSuffix += c; pos++; continue
+                out.rawSuffix += c; syllableLocked = true; pos++; continue
             }
 
             // ── Vowel modifier / vowel / consonant ─────────────────
             if (cLow == 'e' || cLow == 'o' || cLow == 'a' || cLow == 'w') {
+                // Second 'w' immediately after a w-compound (uơ/ươ/ưa/oă)
+                // is absorbed: the compound fold's toggle cycle is already consumed,
+                // so it must not unfold back to "uo"+"w" (fixes huowwngs → hướng).
+                if (cLow == 'w' && !syllableLocked && lastFoldKey == 'w' &&
+                    out.nucleus.isNotEmpty() && nucHasWCompound(out.nucleus)) {
+                    lastFoldKey = '\u0000'
+                    pos++; continue
+                }
                 // Solo 'w' on empty nucleus → ư
-                if (cLow == 'w' && out.nucleus.isEmpty()) {
+                if (!syllableLocked && cLow == 'w' && out.nucleus.isEmpty()) {
                     val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
                     out.nucleus = wChar.toString()
                     lastFoldKey = 'w'; lastFoldNucIdx = 0; lastFoldRawPos = pos
                     pos++; continue
                 }
                 // Vowel modifier: try fold rules
-                if (cLow in FOLD_KEYS && out.nucleus.isNotEmpty() && out.rawSuffix.isEmpty() && !justUntoggled) {
+                if (!syllableLocked && cLow in FOLD_KEYS && out.nucleus.isNotEmpty() && !justUntoggled) {
                     val foldIdx = applyFoldRules(c, pos, raw, out)
                     if (foldIdx >= 0) {
                         lastFoldKey = cLow; lastFoldNucIdx = foldIdx; lastFoldRawPos = pos
-                        syllableLocked = false
                         justUntoggled = false
                         pos++; continue
                     }
@@ -318,7 +335,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         out.nucleus += c
                         lastFoldKey = '\u0000'; lastFoldNucIdx = -1; lastFoldRawPos = -1
                         justUntoggled = true
-                        syllableLocked = false
                         pos++; continue
                     }
                 }
@@ -330,31 +346,24 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         pos++; continue
                     }
                 }
-                // Plain vowel → extend nucleus (blocked only by syllableLocked, not by untoggled fold keys in rawSuffix)
-                if (out.coda.isEmpty() && !syllableLocked) {
+                // Plain vowel → extend nucleus (only while syllable is unlocked)
+                if (!syllableLocked && out.coda.isEmpty()) {
                     val candidateKey = RimeMap.rimeKey(out.nucleus + c.toString())
                     if (RimeMap.isValidPrefix(candidateKey)) {
                         out.nucleus += c
-                        syllableLocked = false
-                        lastFoldKey = ' '; lastFoldNucIdx = -1; lastFoldRawPos = -1
+                        lastFoldKey = '\u0000'; lastFoldNucIdx = -1; lastFoldRawPos = -1
                         pos++; continue
                     }
                 }
-                // Fold key that is a consonant: try coda before rawSuffix
-                if (isConsonant(cLow) && out.nucleus.isNotEmpty() && out.coda.isEmpty() && !syllableLocked) {
-                    val candidateKey = RimeMap.rimeKey(out.nucleus + c.toString())
-                    if (RimeMap.isValidPrefix(candidateKey)) { out.nucleus += c; pos++; continue }
-                }
                 justUntoggled = false
-                out.rawSuffix += c; pos++; continue
+                out.rawSuffix += c; syllableLocked = true; pos++; continue
             }
 
             // ── Base vowel (not a fold key) → extend nucleus ──────
-            if (!isConsonant(cLow) && VietnamesePhonology.isBaseVowel(c)) {
+            if (!syllableLocked && !isConsonant(cLow) && VietnamesePhonology.isBaseVowel(c)) {
                 if (out.nucleus.isEmpty()) {
                     // First vowel: start nucleus
                     out.nucleus = c.toString()
-                    syllableLocked = false
                     justUntoggled = false
                     pos++; continue
                 }
@@ -367,10 +376,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 }
             }
 
-            // ── Consonant: try coda FIRST, then nucleus extension ──
-            if (isConsonant(cLow) && out.nucleus.isNotEmpty()) {
+            // ── Consonant: try as coda, otherwise literal + lock ───
+            if (!syllableLocked && isConsonant(cLow) && out.nucleus.isNotEmpty()) {
                 // Try as coda
-                val codaOk = if (out.coda.isEmpty() && !syllableLocked) {
+                val codaOk = if (out.coda.isEmpty()) {
                     cLow == 'm' || cLow == 'p' || cLow == 'n' || cLow == 't' || cLow == 'c'
                 } else if (out.coda.length == 1) {
                     val c0 = out.coda[0].lowercaseChar()
@@ -382,14 +391,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         out.coda += c; pos++; continue
                     }
                 }
-                // Then try nucleus extension (only when no rawSuffix)
-                if (out.coda.isEmpty() && !syllableLocked) {
-                    val candidateKey = RimeMap.rimeKey(out.nucleus + c.toString())
-                    if (RimeMap.isValidPrefix(candidateKey)) {
-                        out.nucleus += c; pos++; continue
-                    }
-                }
-                out.rawSuffix += c; pos++; continue
+                // Consonants never extend the nucleus (nucleus is vowels-only).
+                // Not a valid coda → literal + hard lock.
+                out.rawSuffix += c; syllableLocked = true; pos++; continue
             }
 
             // ── Any other char → rawSuffix ────────────────────────
