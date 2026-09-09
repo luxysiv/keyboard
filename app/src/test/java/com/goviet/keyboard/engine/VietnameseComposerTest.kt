@@ -244,6 +244,23 @@ class VietnameseComposerTest {
     }
 
     @Test
+    fun testToneKeysBlockedAfterVowelConsonantRejected() {
+        // you/r — o,u are rejected (not valid rimes) → hard lock blocks hook tone 'r'
+        assertEquals("your", engine.process("your"))
+        assertEquals("yours", engine.process("yours"))
+        assertEquals("youtubr", engine.process("youtubr"))
+        assertEquals("yor", engine.process("yor"))
+        assertEquals("engines", engine.process("engines"))
+
+        // 'w' rejection alone keeps tone-ability (ews -> éw): pure modifier
+        assertEquals("éw", engine.process("ews"))
+
+        // Valid Telex still applies tones
+        assertEquals("toán", engine.process("toans"))
+        assertEquals("thướng", engine.process("thuongws"))
+    }
+
+    @Test
     fun testSecondWAfterCompoundFoldIsAbsorbed() {
         // hoạt động: gõ h u o w w n g s -> hướng (2nd w absorbed)
         assertEquals("hướng", engine.process("huowngs"))

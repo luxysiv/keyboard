@@ -245,6 +245,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     out.onset = if (raw[0].isUpperCase()) "D" else "d"
                     out.rawSuffix += c
                     syllableLocked = true
+                    toneLocked = true
                     pos++; continue
                 }
             }
@@ -254,6 +255,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 if (pos + 2 >= len || isConsonant(raw[pos + 2])) {
                     out.rawSuffix += "dd"
                     syllableLocked = true
+                    toneLocked = true
                     pos += 2
                     continue
                 }
@@ -268,7 +270,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         val n0 = out.nucleus[0].lowercaseChar()
                         val n1 = out.nucleus[1].lowercaseChar()
                         if ((n0 == 'a' && n1 == 'a') || (n0 == 'e' && n1 == 'e')) {
-                            out.rawSuffix += c; syllableLocked = true; pos++; continue
+                            out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++; continue
                         }
                     }
                     if (lastToneKey != '\u0000' && cLow == lastToneKey) {
@@ -295,7 +297,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     }
                     pos++; continue
                 }
-                out.rawSuffix += c; syllableLocked = true; pos++; continue
+                out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++; continue
             }
 
             // ── Vowel modifier / vowel / consonant ─────────────────
@@ -356,7 +358,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     }
                 }
                 justUntoggled = false
-                out.rawSuffix += c; syllableLocked = true; pos++; continue
+                out.rawSuffix += c; syllableLocked = true
+                if (cLow != 'w') toneLocked = true
+                pos++; continue
             }
 
             // ── Base vowel (not a fold key) → extend nucleus ──────
@@ -393,11 +397,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 }
                 // Consonants never extend the nucleus (nucleus is vowels-only).
                 // Not a valid coda → literal + hard lock.
-                out.rawSuffix += c; syllableLocked = true; pos++; continue
+                out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++; continue
             }
 
             // ── Any other char → rawSuffix ────────────────────────
-            out.rawSuffix += c; syllableLocked = true; pos++
+            out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++
         }
 
     }
