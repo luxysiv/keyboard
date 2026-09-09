@@ -187,11 +187,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         // ── Handle consecutive 'd' pattern (d→đ toggle) ───────────
         var pos = onsetEnd
-        if (onsetEnd > 0 && raw[0] == 'd' && pos + 1 < len && raw[pos] == 'd' && raw[pos + 1] == 'd') {
-            if (pos + 2 >= len || isConsonant(raw[pos + 2])) {
-                out.onset = "Đ"
-                pos += 1
-            }
+        if (onsetEnd > 0 && raw[0] == 'd' && pos < len && raw[pos] == 'd') {
+            out.onset = "Đ"
+            pos += 1
         }
 
         // ── Step 2–4: Vowel/fold processing ───────────────────────
@@ -203,6 +201,22 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         while (pos < len) {
             val c = raw[pos]
             val cLow = c.lowercaseChar()
+
+            // ── Consecutive 'd' / onset fold → đ ────────────────────
+            if (c == 'd' || c == 'D') {
+                val oLower = out.onset.lowercase()
+                if (oLower.endsWith('d') && out.onset != "Đ") {
+                    // Fold: 'd' onset → 'Đ'
+                    out.onset = if (out.onset[0].isUpperCase()) "Đ" else "đ"
+                    pos++; continue
+                }
+                if (out.onset == "Đ" || out.onset == "đ") {
+                    // Untoggle: 'Đ' → 'd' + literal 'd'
+                    out.onset = if (raw[0].isUpperCase()) "D" else "d"
+                    out.rawSuffix += c
+                    pos++; continue
+                }
+            }
 
             // ── Consecutive 'd' untoggle (between vowels/codas) ─────
             if (c == 'd' && pos + 1 < len && raw[pos + 1] == 'd') {
@@ -256,18 +270,17 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     pos++; continue
                 }
                 // Vowel modifier: try fold rules
-                if (cLow in FOLD_KEYS && out.nucleus.isNotEmpty()) {
+                if (cLow in FOLD_KEYS && out.nucleus.isNotEmpty() && out.rawSuffix.isEmpty()) {
                     if (applyFoldRules(c, pos, out)) {
                         lastFoldKey = cLow; lastFoldNucIdx = out.nucleus.indexOf(cLow.lowercaseChar()); lastFoldRawPos = pos
                         pos++; continue
                     }
                     // Fold rejected → check if this is an untoggle:
-                    // Only untoggle if the fold position still has the plain (unfolded) character.
-                    // If the character was folded (e.g. 'ê' instead of 'e'), a fold was applied
-                    // at that position and we should NOT untoggle — let the fold rules handle it.
+                    // Untoggle when the fold position IS folded (e.g. 'ê' instead of 'e')
+                    // and the SAME fold key is typed again — revert to plain + literal.
                     if (lastFoldKey != '\u0000' && cLow == lastFoldKey &&
                         lastFoldNucIdx >= 0 && lastFoldNucIdx < out.nucleus.length &&
-                        out.nucleus[lastFoldNucIdx] == VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx])) {
+                        out.nucleus[lastFoldNucIdx] != VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx])) {
                         out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx]))
                         out.rawSuffix += c
                         lastFoldKey = '\u0000'; lastFoldNucIdx = -1; lastFoldRawPos = -1
@@ -326,7 +339,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     }
                 }
                 // Try as coda
-                val codaOk = if (out.coda.isEmpty()) {
+                val codaOk = if (out.coda.isEmpty() && out.rawSuffix.isEmpty()) {
                     cLow == 'm' || cLow == 'p' || cLow == 'n' || cLow == 't' || cLow == 'c'
                 } else if (out.coda.length == 1) {
                     val c0 = out.coda[0].lowercaseChar()
