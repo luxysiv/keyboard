@@ -161,6 +161,22 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (OnsetMap.isValidOnset(raw, 0, onsetLen)) {
                 // Single vowel char at start is NOT a valid onset
                 if (onsetLen == 1 && VietnamesePhonology.isBaseVowel(raw[0])) continue
+                // Compound onsets ending with a vowel (gi, qu) should only win
+                // when a vowel follows in the remaining text — otherwise the
+                // final vowel character should become the nucleus (e.g. 'gif' →
+                // onset 'g' + nucleus 'i' + tone, not onset 'gi' + literal 'f').
+                if (onsetLen > 1) {
+                    // Only "gi" (ending in 'i') is ambiguous: its 'i' can serve
+                    // as the nucleus. "qu" must never shrink — there is no
+                    // standalone 'q' onset in Vietnamese.
+                    if (raw[onsetLen - 1].lowercaseChar() == 'i') {
+                        var vowelAfter = false
+                        for (k in onsetLen until len) {
+                            if (VietnamesePhonology.isBaseVowel(raw[k])) { vowelAfter = true; break }
+                        }
+                        if (!vowelAfter) continue
+                    }
+                }
                 onsetEnd = onsetLen
                 break
             }
@@ -267,7 +283,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     }
                 }
                 // Plain vowel → extend nucleus
-                if (out.coda.isEmpty()) {
+                if (out.coda.isEmpty() && out.rawSuffix.isEmpty()) {
                     val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
                     if (RimeMap.isValidPrefix(candidateKey)) {
                         out.nucleus += c
@@ -278,23 +294,32 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
 
             // ── Base vowel (not a fold key) → extend nucleus ──────
-            if (!isConsonant(cLow) && VietnamesePhonology.isBaseVowel(c) && out.coda.isEmpty()) {
+            if (!isConsonant(cLow) && VietnamesePhonology.isBaseVowel(c)) {
                 if (out.nucleus.isEmpty()) {
                     // First vowel: start nucleus
                     out.nucleus = c.toString()
                     pos++; continue
                 }
-                val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
-                if (RimeMap.isValidPrefix(candidateKey)) {
-                    out.nucleus += c
-                    pos++; continue
+                // When rawSuffix already contains literal text (e.g. cancelled
+                // tone key), further vowels must not extend the nucleus — they
+                // stay as literal so the display reads naturally ('purra' →
+                // onset p, nucleus u, rawSuffix 'ra' → 'pura').
+                if (out.coda.isEmpty() && out.rawSuffix.isEmpty()) {
+                    val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
+                    if (RimeMap.isValidPrefix(candidateKey)) {
+                        out.nucleus += c
+                        pos++; continue
+                    }
                 }
             }
 
             // ── Consonant: try nucleus extension THEN coda ───────
             if (isConsonant(cLow) && out.nucleus.isNotEmpty()) {
                 // Always try nucleus extension first (if no coda yet)
-                if (out.coda.isEmpty()) {
+                // Guard: only when no rawSuffix has accumulated — once a
+                // literal tail exists (e.g. cancelled tone key), the
+                // syllable is locked and further chars extend rawSuffix.
+                if (out.coda.isEmpty() && out.rawSuffix.isEmpty()) {
                     val candidateKey = RimeMap.extendKeySingle(RimeMap.rimeKey(out.nucleus), c)
                     if (RimeMap.isValidPrefix(candidateKey)) {
                         out.nucleus += c; pos++; continue
