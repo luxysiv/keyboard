@@ -244,6 +244,22 @@ class VietnameseComposerTest {
     }
 
     @Test
+    fun testUooTypesUo() {
+        // Standard Telex: "uoo" types uô (double o), even when the fold key
+        // comes after the coda (order freedom: luon + o -> luôn).
+        assertEquals("luôn", engine.process("luoon"))
+        assertEquals("luôn", engine.process("luono"))
+        assertEquals("xuống", engine.process("xuoongs"))
+        assertEquals("uống", engine.process("uoongs"))
+        assertEquals("quốc", engine.process("quoocs"))
+        assertEquals("cuối", engine.process("cuoois"))
+        assertEquals("muôn", engine.process("muoon"))
+
+        // 'o' after the w-compound ơ (uowo -> uơo) must NOT re-fold to uô
+        assertEquals("uơo", engine.process("uowo"))
+    }
+
+    @Test
     fun testToneKeysBlockedAfterVowelConsonantRejected() {
         // you/r — o,u are rejected (not valid rimes) → hard lock blocks hook tone 'r'
         assertEquals("your", engine.process("your"))

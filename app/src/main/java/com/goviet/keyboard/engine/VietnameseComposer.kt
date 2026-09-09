@@ -444,8 +444,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         if (cLow == 'o') {
             val idx = findFoldTarget(nucLower, charArrayOf('o', 'ơ'))
             if (idx >= 0 && nucLower[idx] != 'ô') {
-                // Skip o→ô if preceded by 'u' (uo/ua compound handled by w handler)
-                if (idx > 0 && nucLower[idx - 1] == 'u') return -1
+                // Standard Telex: "uoo" types uô (luoon -> luôn, uoongs -> uống).
+                // Only guard the w-compound form: 'ơ' from uo→uơ must not be
+                // folded back to 'ô' by a later 'o' (uowo stays uơo).
+                if (idx > 0 && nucLower[idx - 1] == 'u' && nucLower[idx] == 'ơ') return -1
                 val replacement = if (nuc[idx].isUpperCase()) 'Ô' else 'ô'
                 val newNuc = replaceAt(nuc, idx, replacement)
                 if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return idx }
