@@ -188,7 +188,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // ── Handle consecutive 'd' pattern (d→đ toggle) ───────────
         var pos = onsetEnd
         if (onsetEnd > 0 && raw[0] == 'd' && pos < len && raw[pos] == 'd') {
-            out.onset = "Đ"
+            out.onset = if (raw[0].isUpperCase()) "Đ" else "đ"
             pos += 1
         }
 
@@ -271,8 +271,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 }
                 // Vowel modifier: try fold rules
                 if (cLow in FOLD_KEYS && out.nucleus.isNotEmpty() && out.rawSuffix.isEmpty()) {
-                    if (applyFoldRules(c, pos, out)) {
-                        lastFoldKey = cLow; lastFoldNucIdx = out.nucleus.indexOf(cLow.lowercaseChar()); lastFoldRawPos = pos
+                    val foldIdx = applyFoldRules(c, pos, out)
+                    if (foldIdx >= 0) {
+                        lastFoldKey = cLow; lastFoldNucIdx = foldIdx; lastFoldRawPos = pos
+
                         pos++; continue
                     }
                     // Fold rejected → check if this is an untoggle:
@@ -372,7 +374,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
      * Apply Telex fold rules for the given key at raw position [pos].
      * Returns true if a fold was applied to [out.nucleus].
      */
-    private fun applyFoldRules(c: Char, pos: Int, out: SyllableState): Boolean {
+    private fun applyFoldRules(c: Char, pos: Int, out: SyllableState): Int {
         val nuc = out.nucleus
         val nucLower = nuc.lowercase()
         val onsetLower = out.onset.lowercase()
@@ -383,9 +385,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (idx >= 0 && nucLower[idx] != 'â') {
                 val replacement = if (nuc[idx].isUpperCase()) 'Â' else 'â'
                 val newNuc = replaceAt(nuc, idx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return idx }
             }
-            return false
+            return -1
         }
 
         if (cLow == 'e') {
@@ -393,9 +395,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (idx >= 0 && nucLower[idx] != 'ê') {
                 val replacement = if (nuc[idx].isUpperCase()) 'Ê' else 'ê'
                 val newNuc = replaceAt(nuc, idx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return idx }
             }
-            return false
+            return -1
         }
 
         if (cLow == 'o') {
@@ -403,9 +405,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (idx >= 0 && nucLower[idx] != 'ô') {
                 val replacement = if (nuc[idx].isUpperCase()) 'Ô' else 'ô'
                 val newNuc = replaceAt(nuc, idx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return idx }
             }
-            return false
+            return -1
         }
 
         if (cLow == 'w') {
@@ -418,17 +420,17 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 val hornU = hasCoda || onsetLower !in VALID_UO_ONSETS
                 val transformed = VietnamesePhonology.buildUoPair(nuc[uoIdx], nuc[uoIdx + 1], hornU)
                 val newNuc = nuc.replaceRange(uoIdx, uoIdx + 2, transformed)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return uoIdx }
             }
             // ươ already present → no-op
-            if (nucLower.contains("ươ")) return false
+            if (nucLower.contains("ươ")) return -1
             // ua → ưa
             val uaIdx = findFoldTarget(nucLower, charArrayOf('u'))
             if (uaIdx >= 0 && uaIdx + 1 < nuc.length && nucLower[uaIdx + 1] == 'a') {
                 val uStr = if (nuc[uaIdx].isUpperCase()) "Ư" else "ư"
                 val aStr = if (nuc[uaIdx + 1].isUpperCase()) "A" else "a"
                 val newNuc = nuc.replaceRange(uaIdx, uaIdx + 2, uStr + aStr)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return uaIdx }
             }
             // oa → oă
             val oaIdx = findFoldTarget(nucLower, charArrayOf('o'))
@@ -436,29 +438,29 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 val oStr = if (nuc[oaIdx].isUpperCase()) "O" else "o"
                 val aStr = if (nuc[oaIdx + 1].isUpperCase()) "Ă" else "ă"
                 val newNuc = nuc.replaceRange(oaIdx, oaIdx + 2, oStr + aStr)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return oaIdx }
             }
             // Single-tile: o→ơ (not ô,ơ), u→ư (not ư, not after q), a→ă (not ă,â)
             val oIdx = findFoldTarget(nucLower, charArrayOf('o'))
             if (oIdx >= 0 && nucLower[oIdx] != 'ơ' && nucLower[oIdx] != 'ô') {
                 val replacement = if (nuc[oIdx].isUpperCase()) 'Ơ' else 'ơ'
                 val newNuc = replaceAt(nuc, oIdx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return oIdx }
             }
             val uIdx = findFoldTarget(nucLower, charArrayOf('u'))
             if (uIdx >= 0 && nucLower[uIdx] != 'ư' && onsetLower != "q") {
                 val replacement = if (nuc[uIdx].isUpperCase()) 'Ư' else 'ư'
                 val newNuc = replaceAt(nuc, uIdx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return uIdx }
             }
             val aIdx = findFoldTarget(nucLower, charArrayOf('a'))
             if (aIdx >= 0 && nucLower[aIdx] != 'ă' && nucLower[aIdx] != 'â') {
                 val replacement = if (nuc[aIdx].isUpperCase()) 'Ă' else 'ă'
                 val newNuc = replaceAt(nuc, aIdx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return true }
+                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return aIdx }
             }
         }
-        return false
+        return -1
     }
 
     private fun findFoldTarget(nuc: String, targets: CharArray): Int {
