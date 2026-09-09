@@ -537,20 +537,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         while (i < raw.length) {
             val c = raw[i]
             if (isBoundaryKey(c)) {
-                out.append(replayState.toDisplayString(options.oldTonePlacement))
                 out.append(c)
                 replayState.reset()
-            } else {
-                val start = i
-                while (i < raw.length && !isBoundaryKey(raw[i])) i++
-                val syllable = raw.subSequence(start, i)
-                resegment(syllable, replayState)
-                out.append(replayState.toDisplayString(options.oldTonePlacement))
-                continue  // i already advanced
+                i++
+                continue
             }
-            i++
-        }
-        if (!replayState.isEmpty()) {
+            val start = i
+            while (i < raw.length && !isBoundaryKey(raw[i])) i++
+            val syllable = raw.subSequence(start, i)
+            resegment(syllable, replayState)
             out.append(replayState.toDisplayString(options.oldTonePlacement))
         }
         replayState.reset()
@@ -566,20 +561,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         while (i < rawLen) {
             val c = raw[i]
             if (isBoundaryKey(c)) {
-                out.append(replayState.toDisplayString(options.oldTonePlacement))
                 out.append(c)
                 replayState.reset()
-            } else {
-                val start = i
-                while (i < rawLen && !isBoundaryKey(raw[i])) i++
-                val syllable = raw.subSequence(start, i)
-                resegment(syllable, replayState)
-                out.append(replayState.toDisplayString(options.oldTonePlacement))
+                i++
                 continue
             }
-            i++
-        }
-        if (!replayState.isEmpty()) {
+            val start = i
+            while (i < rawLen && !isBoundaryKey(raw[i])) i++
+            val syllable = raw.subSequence(start, i)
+            resegment(syllable, replayState)
             out.append(replayState.toDisplayString(options.oldTonePlacement))
         }
         replayState.reset()
