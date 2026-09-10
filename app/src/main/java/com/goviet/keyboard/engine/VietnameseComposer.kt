@@ -354,8 +354,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     }
                 }
                 justUntoggled = false
-                out.rawSuffix += c; syllableLocked = true
-                if (cLow != 'w') toneLocked = true
+                out.rawSuffix += c; syllableLocked = true; toneLocked = true
                 pos++; continue
             }
 
