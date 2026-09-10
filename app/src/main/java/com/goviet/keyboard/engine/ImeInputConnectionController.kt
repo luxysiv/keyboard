@@ -68,81 +68,134 @@ class ImeInputConnectionController(
     /** Live syllable state — source of truth for display. */
     val composingState = VietnameseComposer.SyllableState()
 
-    // Expected cursor positions set by our own setSelection calls, each stamped with its
-    // creation time. WebViews can emit stale or duplicated onUpdateSelection callbacks after
-    // a delay, so a slot is only accepted while it is still recent (within TTL). This keeps
-    // the capability to acknowledge several cursor moves in quick succession while rejecting
-    // callbacks that arrive too late to plausibly belong to the current operation.
-    private val expectedCursorPositions = IntArray(16) { -1 }
-    private val expectedCursorTimes = LongArray(16) { -1L }
-    private var expectedCursorHead = 0
-
-    // Window (ms) during which a self-generated cursor is still considered "ours".
-    private val expectedCursorTtlMs: Long = 350
-
-    // Minimum gap between our own setComposingRegion re-announcements. Some editors
-    // (WebView/Chrome) persist in reporting candidatesStart == -1 on every reflection
-    // of our composing span; re-asserting the region on each callback would loop
-    // setComposingRegion -> onUpdateSelection -> setComposingRegion and make the
-    // underline flicker. Throttling breaks that ping-pong.
-    private val composingReannounceMinGapMs: Long = 500
-    private var lastComposingReannounceAt = 0L
-
-    fun pushExpectedCursor(cursor: Int) {
-        if (cursor < 0) return
-        expectedCursorPositions[expectedCursorHead] = cursor
-        expectedCursorTimes[expectedCursorHead] = android.os.SystemClock.uptimeMillis()
-        expectedCursorHead = (expectedCursorHead + 1) % expectedCursorPositions.size
-    }
-
-    fun isExpectedCursor(cursor: Int): Boolean {
-        if (cursor < 0) return false
-        val now = android.os.SystemClock.uptimeMillis()
-        for (i in expectedCursorPositions.indices) {
-            if (expectedCursorPositions[i] == cursor) {
-                // Reject expectations that have gone stale: a delayed callback no longer
-                // belongs to the operation that set it.
-                if (now - expectedCursorTimes[i] > expectedCursorTtlMs) {
-                    expectedCursorPositions[i] = -1
-                    return false
-                }
-                expectedCursorPositions[i] = -1
-                expectedCursorTimes[i] = -1L
-                return true
-            }
-        }
-        return false
-    }
-
-    fun clearExpectedCursors() {
-        for (i in expectedCursorPositions.indices) {
-            expectedCursorPositions[i] = -1
-        }
-        expectedCursorTimes.fill(-1L)
-        expectedCursorHead = 0
-    }
-
     /**
-     * Moves the editor cursor to [cursor] and records it as the expected position,
-     * so subsequent selection callbacks are not mistaken for a user move.
+     * SelectionGuard — the single owner of "is this onUpdateSelection ours?" bookkeeping.
+     *
+     * Every place that moves the caret or announces a composing region MUST go through
+     * this guard, so the editor's asynchronous reflection of our own setSelection /
+     * setComposingText / setComposingRegion is always registered as "ours" and never
+     * mistaken for a user cursor move (which would commit/re-adopt the syllable and
+     * flicker the underline).
+     *
+     * Owns:
+     *  - expected cursor ring buffer: positions we set, each stamped with its creation
+     *    time. WebViews can emit stale or duplicated onUpdateSelection callbacks after
+     *    a delay, so a slot is only accepted while still recent (within TTL); several
+     *    moves in quick succession are still acknowledged.
+     *  - composing-region announcement throttle: some editors (WebView/Chrome) persist
+     *    in reporting candidatesStart == -1 on every reflection of our composing span;
+     *    re-asserting unthrottled would loop setComposingRegion -> onUpdateSelection ->
+     *    setComposingRegion and make the underline flicker.
+     *  - recent engine region record: the span WE just wrote, so delete paths can tell
+     *    it apart from a genuine selection a few frames later.
      */
-    fun moveCursorTo(ic: InputConnection, cursor: Int) {
-        if (cursor < 0) return
-        ic.setSelection(cursor, cursor)
-        expectedCursorStart = cursor
-        expectedCursorEnd = cursor
+    private inner class SelectionGuard {
+        private val expectedPositions = IntArray(16) { -1 }
+        private val expectedTimes = LongArray(16) { -1L }
+        private var expectedHead = 0
+        private var lastAnnounceAt = 0L
+        private var recentRegionStart = -1
+        private var recentRegionLen = 0
+        private var recentRegionAt = 0L
+
+        /** Window (ms) during which a self-generated cursor is still considered "ours". */
+        private val expectedCursorTtlMs: Long = 350
+
+        /** Minimum gap between our own setComposingRegion re-announcements. */
+        private val composingReannounceMinGapMs: Long = 500
+
+        /** Remember [cursor] as a position WE moved to / announced. */
+        fun register(cursor: Int) {
+            if (cursor < 0) return
+            expectedPositions[expectedHead] = cursor
+            expectedTimes[expectedHead] = android.os.SystemClock.uptimeMillis()
+            expectedHead = (expectedHead + 1) % expectedPositions.size
+        }
+
+        /** TTL-checks and consumes [cursor] if it was registered by us. */
+        fun isExpected(cursor: Int): Boolean {
+            if (cursor < 0) return false
+            val now = android.os.SystemClock.uptimeMillis()
+            for (i in expectedPositions.indices) {
+                if (expectedPositions[i] == cursor) {
+                    // Reject expectations that have gone stale: a delayed callback no
+                    // longer belongs to the operation that set it.
+                    if (now - expectedTimes[i] > expectedCursorTtlMs) {
+                        expectedPositions[i] = -1
+                        return false
+                    }
+                    expectedPositions[i] = -1
+                    expectedTimes[i] = -1L
+                    return true
+                }
+            }
+            return false
+        }
+
+        /** Moves the editor caret to [cursor] and registers it as ours. */
+        fun moveTo(ic: InputConnection, cursor: Int) {
+            if (cursor < 0) return
+            ic.setSelection(cursor, cursor)
+            register(cursor)
+        }
+
+        /**
+         * Announces a composing region and registers its caret as ours in one step —
+         * the register must NEVER be forgotten next to a setComposingRegion.
+         */
+        fun announceRegion(ic: InputConnection, start: Int, end: Int, caret: Int) {
+            if (start < 0 || end <= start) return
+            lastAnnounceAt = System.currentTimeMillis()
+            register(caret)
+            ic.setComposingRegion(start, end)
+        }
+
+        /**
+         * Re-announces [start, end) with caret [caret], but only if the last
+         * announcement was long enough ago — an unthrottled re-assert would loop
+         * setComposingRegion -> onUpdateSelection -> setComposingRegion.
+         */
+        fun maybeReannounce(ic: InputConnection, start: Int, end: Int, caret: Int): Boolean {
+            if (start < 0 || end <= start) return false
+            val now = System.currentTimeMillis()
+            if (now - lastAnnounceAt <= composingReannounceMinGapMs) return false
+            announceRegion(ic, start, end, caret)
+            return true
+        }
+
+        /** Records the span [start, start+len) WE just wrote (composing/committing). */
+        fun markRecentRegion(start: Int, len: Int) {
+            if (start < 0) return
+            recentRegionStart = start
+            recentRegionLen = len
+            recentRegionAt = System.currentTimeMillis()
+        }
+
+        /** True when [start, end) is a span we wrote recently (not a user selection). */
+        fun isRecentRegion(start: Int, end: Int): Boolean {
+            if (recentRegionStart < 0 || end - start != recentRegionLen) return false
+            if (System.currentTimeMillis() - recentRegionAt > 600L) return false
+            return start == recentRegionStart
+        }
+
+        /** Resets all "ours" bookkeeping (ring, throttle, recent region). */
+        fun clear() {
+            for (i in expectedPositions.indices) {
+                expectedPositions[i] = -1
+                expectedTimes[i] = -1L
+            }
+            expectedHead = 0
+            lastAnnounceAt = 0L
+            recentRegionStart = -1
+            recentRegionLen = 0
+            recentRegionAt = 0L
+        }
     }
 
-    var expectedCursorStart: Int = -1
-        set(value) {
-            field = value
-            if (value >= 0) pushExpectedCursor(value)
-        }
-    var expectedCursorEnd: Int = -1
-        set(value) {
-            field = value
-            if (value >= 0) pushExpectedCursor(value)
-        }
+    private val selectionGuard = SelectionGuard()
+
+    /** Public wrapper: move the editor caret and register it as ours. */
+    fun moveCursorTo(ic: InputConnection, cursor: Int) = selectionGuard.moveTo(ic, cursor)
 
     // Cached cursor & selection state pushed by Android OS via onUpdateSelection
     var cachedSelStart: Int = 0
@@ -153,27 +206,8 @@ class ImeInputConnectionController(
     var userMovedCursor: Boolean = false
     var userSelectedText: Boolean = false
 
-    // Region of the composing/committed span WE just wrote. Some editors
-    // (WebView/Chrome) keep reporting this span as the active "selection" for a
-    // few frames after commitText/setComposingText. Treating it as a real user
-    // selection makes the next backspace delete the whole word, so the delete
-    // paths must recognise and ignore it. Thread-confined, IME thread only.
-    private var recentEngineRegionStart = -1
-    private var recentEngineRegionLen = 0
-    private var recentEngineRegionAt = 0L
-
-    private fun recordEngineRegion(start: Int, len: Int) {
-        if (start < 0) return
-        recentEngineRegionStart = start
-        recentEngineRegionLen = len
-        recentEngineRegionAt = System.currentTimeMillis()
-    }
-
-    private fun isRecentEngineRegion(start: Int, end: Int): Boolean {
-        if (recentEngineRegionStart < 0 || end - start != recentEngineRegionLen) return false
-        if (System.currentTimeMillis() - recentEngineRegionAt > 600L) return false
-        return start == recentEngineRegionStart
-    }
+    // NOTE: the "region WE just wrote" record (used by the delete paths) now lives
+    // in SelectionGuard.markRecentRegion/isRecentRegion — see above.
 
     fun onUpdateSelection(
         oldSelStart: Int, oldSelEnd: Int,
@@ -202,7 +236,8 @@ class ImeInputConnectionController(
 
         // 1. If this update matches one of our recent expected cursor positions OR is a rapid reflection
         //    of recent typing within the composing region, consume it as our own.
-        val isExpected = (insideComposingRegion && isExpectedCursor(newSelStart)) || (insideComposingRegion && isRecentTyping)
+        val isExpected = (insideComposingRegion && selectionGuard.isExpected(newSelStart)) ||
+                (insideComposingRegion && isRecentTyping)
         if (isExpected) {
             userMovedCursor = false
             userSelectedText = false
@@ -214,18 +249,14 @@ class ImeInputConnectionController(
             ) {
                 val ic = service.currentInputConnection
                 if (ic != null) {
-                    val now = System.currentTimeMillis()
-                    if (now - lastComposingReannounceAt > composingReannounceMinGapMs) {
-                        lastComposingReannounceAt = now
-                        // The reflection of this re-announcement must not be read as a
-                        // user caret move, otherwise it would commit/clear and re-adopt
-                        // the syllable, blinking the underline.
-                        pushExpectedCursor(newSelStart)
-                        ic.setComposingRegion(
-                            composingStartInEditor,
-                            composingStartInEditor + lastDisplay.length
-                        )
-                    }
+                    // Re-announce is throttled and registers the caret inside the guard,
+                    // so its reflection is consumed as ours, never as a user move.
+                    selectionGuard.maybeReannounce(
+                        ic,
+                        composingStartInEditor,
+                        composingStartInEditor + lastDisplay.length,
+                        newSelStart
+                    )
                 }
             }
             return
@@ -304,12 +335,13 @@ class ImeInputConnectionController(
         isVietnamese = true
         inputEngine.replayRawToState(adopt.canonicalRaw, composingState)
         lastSetComposingText = prefix
-        // The editor reflects our own setComposingRegion back as an onUpdateSelection;
-        // register the caret so that reflection is consumed as ours instead of being
+        // announceRegion registers the caret AND updates the editor in one step, so the
+        // reflection of our own setComposingRegion is consumed as ours instead of being
         // mistaken for a user move (which would commit/clear and re-adopt, flickering
         // the underline forever).
-        pushExpectedCursor(word.startInEditor + offset)
-        ic.setComposingRegion(word.startInEditor, word.startInEditor + prefix.length)
+        selectionGuard.announceRegion(
+            ic, word.startInEditor, word.startInEditor + prefix.length, word.startInEditor + offset
+        )
         userMovedCursor = false
     }
 
@@ -350,9 +382,7 @@ class ImeInputConnectionController(
         lastKeyPressTime = 0L
         composingStartInEditor = -1
         composingCursorIndex = 0
-        expectedCursorStart = -1
-        expectedCursorEnd = -1
-        clearExpectedCursors()
+        selectionGuard.clear()
         lastExpandedMacro = null
         lastCommittedSeparator = null
         inputEngine.reset()
@@ -406,7 +436,7 @@ class ImeInputConnectionController(
         // Exclude the composing/just-committed span we wrote ourselves: to the
         // engine that is a caret, never a selection ('rồng ' -> BACKSPACE must
         // remove the space, not the whole word).
-        if (isRecentEngineRegion(selStart, selEnd)) return false
+        if (selectionGuard.isRecentRegion(selStart, selEnd)) return false
         return true
     }
 
@@ -509,7 +539,12 @@ class ImeInputConnectionController(
             isVietnamese = true
             inputEngine.replayRawToState(canonicalRaw, composingState)
             lastSetComposingText = displayBuf.toStringVal()
-            ic.setComposingRegion(wordAtCursor.startInEditor, wordAtCursor.startInEditor + adoptTarget.length)
+            selectionGuard.announceRegion(
+                ic,
+                wordAtCursor.startInEditor,
+                wordAtCursor.startInEditor + adoptTarget.length,
+                wordAtCursor.startInEditor + adoptTarget.length
+            )
             userMovedCursor = false
             return
         }
@@ -531,7 +566,9 @@ class ImeInputConnectionController(
             isVietnamese = true
             inputEngine.replayRawToState(wordText, composingState)
             lastSetComposingText = wordText
-            ic.setComposingRegion(wordAtCursor.startInEditor, wordAtCursor.endInEditor)
+            selectionGuard.announceRegion(
+                ic, wordAtCursor.startInEditor, wordAtCursor.endInEditor, wordAtCursor.endInEditor
+            )
             userMovedCursor = false
             return
         }
@@ -544,8 +581,9 @@ class ImeInputConnectionController(
             composingState.reset()
             composingState.rawSuffix = wordText
             lastSetComposingText = wordText
-
-            ic.setComposingRegion(wordAtCursor.startInEditor, wordAtCursor.endInEditor)
+            selectionGuard.announceRegion(
+                ic, wordAtCursor.startInEditor, wordAtCursor.endInEditor, wordAtCursor.endInEditor
+            )
             userMovedCursor = false
             return
         }
@@ -579,14 +617,12 @@ class ImeInputConnectionController(
     fun resetComposingUI(ic: InputConnection, backspaceCountIfImmediate: Int = 0) {
         ic.beginBatchEdit()
         try {
-            clearExpectedCursors()
+            selectionGuard.clear()
             composingRaw.clear()
             composingState.reset()
             activeComposingShiftState = 0
             lastSetComposingText = null
-            expectedCursorStart = -1
-            expectedCursorEnd = -1
-                inputEngine.reset()
+            inputEngine.reset()
             if (isImmediateCommitMode()) {
                 if (backspaceCountIfImmediate > 0) {
                     backspaceHandler.sendBackspaceEvents(ic, backspaceCountIfImmediate)
@@ -622,15 +658,14 @@ class ImeInputConnectionController(
                     // Caret at the end: the prefix equals the full raw, so its display
                     // length is the compiled text we already have — no extra recompile.
                     val displayCursor = compiled.length
-                    expectedCursorStart = composingStartInEditor + displayCursor
-                    expectedCursorEnd = expectedCursorStart
+                    selectionGuard.register(composingStartInEditor + displayCursor)
                 }
             }
             if (!isImmediateCommitMode()) {
                 // The span [composingStartInEditor, +compiled.length) now exists in
                 // the editor as our composing region; remember it so delete paths
                 // can tell it apart from a genuine selection.
-                recordEngineRegion(composingStartInEditor, compiled.length)
+                selectionGuard.markRecentRegion(composingStartInEditor, compiled.length)
             }
             lastSetComposingText = compiled
         } finally {
@@ -932,7 +967,7 @@ class ImeInputConnectionController(
             if (ic != null) {
                 ic.beginBatchEdit()
                 try {
-                    clearExpectedCursors()
+                    selectionGuard.clear()
                     val raw = composingRaw.toString()
                     val macroExpanded = tryExpandMacro(raw, wordBreak)
                     val outputText = macroExpanded ?: (if (!isVietnamese) raw + wordBreak else compileRawDisplay() + wordBreak)
@@ -954,7 +989,7 @@ class ImeInputConnectionController(
                         // The span we are committing was a composing region in the
                         // editor; keep it for a short window so a stale selection
                         // report from the editor is not mistaken for a user one.
-                        recordEngineRegion(composingStartInEditor, lastSetComposingText?.length ?: 0)
+                        selectionGuard.markRecentRegion(composingStartInEditor, lastSetComposingText?.length ?: 0)
                     }
                     recordImeCommit(outputText.trim())
                     clearState()
