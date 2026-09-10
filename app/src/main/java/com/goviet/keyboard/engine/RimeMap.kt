@@ -558,9 +558,11 @@ object RimeMap {
         for (i in n.indices) {
             if (n[i] == 'o' && !(i > 0 && n[i - 1] == 'u')) return foldCode(i, 'ơ').toLong()
         }
-        // â→ă fold (hat→horn within a-family)
+        // Hat→horn folds within vowel families: â→ă, ô→ơ
         val hatA = n.indexOf('â')
         if (hatA >= 0) return foldCode(hatA, 'ă').toLong()
+        val hatO = n.indexOf('ô')
+        if (hatO >= 0) return foldCode(hatO, 'ơ').toLong()
         val a = n.indexOf('a')
         if (a >= 0) return foldCode(a, 'ă').toLong()
         return 0L
