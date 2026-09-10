@@ -55,8 +55,10 @@ object OnsetMap {
     private lateinit var _data: ByteArray
     private lateinit var _fold: ByteArray
     private lateinit var _foldKey: CharArray  // reverse: fold-result slot → fold key
-    // bit 0: isComplete, bit 1: isPrefix (of some longer onset),
-    // bit 2: allows the OPEN rime "uơ" (huơ, thuở, khuơ, quơ, luơ…)
+    // Data byte layout (only bits 0 and 2 are currently used):
+    //   bit 0: isComplete — every stored entry is a complete onset; prefix
+    //          detection for composition is handled by isPrefixOfCompound
+    //   bit 2: allows the OPEN rime "uơ" (huơ, thuở, khuơ, quơ, luơ…)
     //
     // `_fold[slot]` carries the Telex fold target for the onset (only d→đ
     // today), same 16-bit code shape as RimeMap folds — folded down to one
@@ -73,8 +75,8 @@ object OnsetMap {
         // Insert all complete onsets (NO prefix entries for single chars
         // like 'q' — those are handled by isPrefixOfCompound).
         for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
-        // Onsets after which the open rime "uơ" is real (list from the actual
-        // words containing the vần "uơ": huơ, thuở, khuơ, quơ, luơ).
+        // Onsets after which the open rime "uơ" is real (list derived from the
+        // actual words containing the rime "uơ": huơ, thuở, khuơ, quơ, luơ).
         val openUoOnsets = arrayOf("h", "th", "kh", "qu", "l")
         for (o in openUoOnsets) insertOr(onsetKey(o), 0x04)
         // Fold target: plain 'd' onset + 'd' → 'đ' (the fold/untoggle cycle is

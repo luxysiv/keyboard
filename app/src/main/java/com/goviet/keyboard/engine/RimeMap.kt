@@ -84,10 +84,10 @@ object RimeMap {
         return (totalLen shl 25) or chars
     }
 
-    // ── Incremental key building (for hot-path composition) ───────
+    // ── Incremental key building (hot-path helpers) ───────────────
     //
-    // These let the composer maintain the rime key incrementally as
-    // nucleus/coda strings change, avoiding full key recomputation.
+    // Extend an existing rime key with additional characters without
+    // re-encoding the whole string — used in the composer's resegment loop.
 
     /** Shift existing key left 5 bits and add next character — O(1). */
     @JvmStatic
@@ -177,7 +177,7 @@ object RimeMap {
         // and optional old-style tone position override.
         // Tone position: 0 = vowel itself, 1 = digraph second char,
         //                2 = trigraph middle char.
-        // "isStop": coda in {c, ch, p, t} → only Sắc/Nặng tones allowed.
+        // "isStop": coda in {c, ch, p, t} → only acute/dot (sắc/nặng) tones allowed.
 
         data class NucSpec(
             val nucleus: String,
@@ -188,7 +188,7 @@ object RimeMap {
 
         // Coda groups — exact pairs that actually exist in Vietnamese
         // (verified against the 17,974-syllable corpus; NOT the full Cartesian product).
-        //   c/ch/p/t = stop codas → only Sắc+Nặng tones
+        //   c/ch/p/t = stop codas → only acute/dot (sắc/nặng) tones
         //   m/n/ng/nh = nasal codas → 6 tones
         val C_ALL   = arrayOf("c","ch","p","t","m","n","ng","nh") // a, ê, oa
         val C_SHORT = arrayOf("c","p","t","m","n","ng")           // ă, â, o, ô, u, uô, ươ, iê, uo, ie
@@ -415,7 +415,7 @@ object RimeMap {
 
     /**
      * Check if a tone is allowed for this rime.
-     * Stop codas (c, ch, p, t) only allow Sác (1) and Nặng (5).
+     * Stop codas (c, ch, p, t) only allow acute (sắc, 1) and dot (nặng, 5).
      */
     @JvmStatic
     fun isToneAllowed(key: Int, tone: Int): Boolean {
@@ -424,7 +424,7 @@ object RimeMap {
         val d = _data[i].toInt()
         if (tone == 0) return true                           // NONE always OK
         if ((d and 4) == 0) return true                      // non-stop: all tones OK
-        return tone == 1 || tone == 5                        // stop: only Sác/Nặng
+        return tone == 1 || tone == 5                        // stop: only acute/dot (sắc/nặng)
     }
 
     /**

@@ -9,8 +9,8 @@ import com.goviet.core.EngineConfig
  *
  * All syllable segmentation is derived by the single `resegment` function.
  * No incremental mutation of syllable fields through per-keystroke handlers —
- * every call to feedKey appends the key to the raw buffer and rederives the
- * full state from scratch.
+ * the controller appends each key to the raw buffer, then feedKey rederives
+ * the full state from scratch on that buffer.
  */
 class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
@@ -199,7 +199,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         var pos = onsetEnd
 
-        // ── Step 2–4: Vowel/fold processing ───────────────────────
+        // ── Main loop: tone, fold, vowel & coda processing ──────────
         var lastFoldKey = '\u0000'   // fold key that last modified nucleus
         var lastFoldNucIdx = -1        // nucleus index where fold was applied
         var lastFoldRawPos = -1        // raw text position of the fold key

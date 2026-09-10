@@ -5,7 +5,8 @@ package com.goviet.keyboard.engine
  *
  * Merged from: VietnameseFiniteStateTable, VietnameseSpellingGuide, VietnamesePhonology.
  * Single Source of Truth for:
- * - Flat-array Trie for rime/nucleus validation & tone placement
+ * - Bit-packed flat map (fibonacci hash + open addressing) for
+ *   rime/nucleus validation & tone placement — see RimeMap
  * - Onset/coda phonological rules
  * - Telex fold/unfold rules and tone placement
  * - Vietnamese vowel/consonant inventories
@@ -21,7 +22,7 @@ object VietnamesePhonology {
      */
     val BASE_VOWELS = "aăâeêioôơuưy"
 
-    /** Telex tone keys: s(đacute), f(grave), r(hook), x(tilde), j(dot), z(clear). */
+    /** Telex tone keys: s(acute), f(grave), r(hook), x(tilde), j(dot), z(clear). */
     val TONE_KEYS = "sfrxjz"
 
     /** Telex vowel modifier keys (fold triggers): e(→ê), o(→ô), a(→â), w(→ă/ơ/ư). */
