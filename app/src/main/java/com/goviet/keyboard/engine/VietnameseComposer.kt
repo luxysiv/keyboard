@@ -219,6 +219,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var justUntoggled = false  // true after fold→untoggle, prevents immediate re-fold
         var toneLocked = false  // true after tone key rejected (not cancelled) for invalid rime
         var wOnsetAbsorbed = false  // true after the first w-absorb after onset 'w' (w+w→w)
+        var standaloneWFold = false  // true when standalone 'w' creates ư from nothing (no prior nucleus)
 
         while (pos < len) {
             val c = raw[pos]
@@ -304,6 +305,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     wOnsetAbsorbed = true
                     pos++; continue
                 }
+                // Standalone w → ư (no onset, no nucleus, directW=OFF)
+                if (!options.directW && cLow == 'w' && !syllableLocked &&
+                    out.nucleus.isEmpty() && out.onset.isEmpty()) {
+                    val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
+                    out.nucleus = wChar.toString()
+                    lastFoldKey = 'w'; lastFoldNucIdx = 0; lastFoldRawPos = pos
+                    standaloneWFold = true
+                    pos++; continue
+                }
                 // w after consonant onset + empty nucleus → create ư
                 // sw→sư, dw→dư, lw→lư (w creates ư nucleus when no vowel yet)
                 if (!options.directW && cLow == 'w' && !syllableLocked &&
@@ -312,6 +322,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
                     out.nucleus = wChar.toString()
                     lastFoldKey = 'w'; lastFoldNucIdx = 0; lastFoldRawPos = pos
+                    standaloneWFold = false
                     pos++; continue
                 }
 
@@ -324,15 +335,23 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (lastFoldKey != '\u0000' && cLow == lastFoldKey &&
                         lastFoldNucIdx >= 0 && lastFoldNucIdx < out.nucleus.length &&
                         out.nucleus[lastFoldNucIdx] != VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx])) {
-                        out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx]))
-                        out.nucleus += c
+                        if (standaloneWFold) {
+                            out.nucleus = ""
+                            out.rawSuffix += c
+                            syllableLocked = true; toneLocked = true
+                        } else {
+                            out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx]))
+                            out.nucleus += c
+                        }
                         lastFoldKey = '\u0000'; lastFoldNucIdx = -1; lastFoldRawPos = -1
+                        standaloneWFold = false
                         justUntoggled = true
                         pos++; continue
                     }
                     val foldIdx = applyFoldRules(c, pos, raw, out)
                     if (foldIdx >= 0) {
                         lastFoldKey = cLow; lastFoldNucIdx = foldIdx; lastFoldRawPos = pos
+                        standaloneWFold = false
                         justUntoggled = false
                         pos++; continue
                     }
