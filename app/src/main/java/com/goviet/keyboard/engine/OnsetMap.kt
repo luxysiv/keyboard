@@ -129,6 +129,21 @@ object OnsetMap {
      */
     fun isPrefixOfCompound(c: Char): Boolean = c.lowercaseChar() in COMPOUND_FIRST_CHARS
 
+    // Single-char check that combines isValidOnsetSingle + isPrefixOfCompound
+    // into ONE BooleanArray(512) lookup — hot path in the composer loop.
+    private val CONSONANT_BOOL = BooleanArray(512).also { arr ->
+        for (o in ALL_ONSETS) if (o.length == 1) arr[o[0].lowercaseChar().code] = true
+        for (o in ALL_ONSETS) if (o.length > 1) arr[o[0].lowercaseChar().code] = true
+        arr['q'.lowercaseChar().code] = true
+    }
+
+    /** True if [c] is a valid onset char or the first char of a compound onset. */
+    @JvmStatic
+    fun isConsonant(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until 512 && CONSONANT_BOOL[code]
+    }
+
     /** Public packed key for an onset string — same 25-bit encoding as the table. */
     @JvmStatic
     fun onsetKeyOf(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Int =

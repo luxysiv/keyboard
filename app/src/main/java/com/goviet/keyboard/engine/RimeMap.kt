@@ -295,55 +295,6 @@ object RimeMap {
         }
     }
 
-    private fun countEntries(): Int {
-        val C_ALL = arrayOf("c","ch","p","t","m","n","ng","nh")
-        val C_SHORT = arrayOf("c","p","t","m","n","ng")
-        val C_I = arrayOf("ch","p","t","m","n","nh")
-        val C_O5 = arrayOf("p","t","m","n")
-        val C_U8 = arrayOf("c","m","n","ng","t")
-        val C_Y = arrayOf("p","t","ch","n","nh")
-        val C_OE = arrayOf("m","n","t")
-        val C_OA5 = arrayOf("c","m","n","ng","t")
-        val C_UE = arrayOf("ch","nh")
-        val C_UA4 = arrayOf("n","ng","t")
-        val C_UY2 = arrayOf("p","t","ch","n","nh")
-        val C_OO = arrayOf("c","ng")
-        val C_UYE = arrayOf("n","t")
-        val C_TMNG = arrayOf("t","m","n","ng")
-        val C_NONE = emptyArray<String>()
-
-        data class S(val n: String, val c: Array<String>)
-        val nuclei = arrayOf(
-            S("a",C_ALL),S("ă",C_SHORT),S("â",C_SHORT),S("e",C_SHORT),S("ê",C_ALL),S("i",C_I),
-            S("o",C_SHORT),S("ô",C_SHORT),S("ơ",C_O5),S("u",C_SHORT),S("ư",C_U8),S("y",C_Y),
-            S("oa",C_ALL),S("oă",C_OA5),S("oe",C_OE),S("ue",C_UE),S("uy",C_UY2),
-            S("uâ",C_UA4),S("uê",C_UE),S("uô",C_SHORT),S("uo",C_SHORT),S("ua",C_NONE),
-            S("ưa",C_NONE),S("uơ",C_NONE),S("ươ",C_SHORT),S("ia",C_NONE),
-            S("ie",C_SHORT),S("iê",C_SHORT),S("ye",C_TMNG),S("yê",C_TMNG),S("oo",C_OO),
-            S("uye",C_UYE),S("uyê",C_UYE),
-            S("ai",C_NONE),S("ao",C_NONE),S("au",C_NONE),S("ay",C_NONE),
-            S("âu",C_NONE),S("ây",C_NONE),S("eo",C_NONE),S("eu",C_NONE),
-            S("êu",C_NONE),S("iu",C_NONE),S("oi",C_NONE),S("ôi",C_NONE),
-            S("ơi",C_NONE),S("ui",C_NONE),S("uu",C_NONE),S("ưi",C_NONE),
-            S("ieu",C_NONE),S("iêu",C_NONE),S("yeu",C_NONE),S("yêu",C_NONE),
-            S("uoi",C_NONE),S("uôi",C_NONE),S("uơi",C_NONE),S("uou",C_NONE),
-            S("uya",C_NONE),S("uyu",C_NONE),S("ươi",C_NONE),S("ươu",C_NONE),
-            S("oai",C_NONE),S("oao",C_NONE),S("oay",C_NONE),S("oeo",C_NONE),
-            S("uau",C_NONE),S("uay",C_NONE),S("uâu",C_NONE),S("uây",C_NONE),
-            S("ueu",C_NONE),S("uêu",C_NONE)
-        )
-        var count = 0
-        for (s in nuclei) {
-            count += 1 + s.c.size
-        }
-        // Prefixes: for each rime of length L>1, L-1 prefixes
-        var rimeCount = 0
-        for (s in nuclei) {
-            rimeCount += 1 + s.c.size
-        }
-        return count + rimeCount * 2
-    }
-
     /** Pack metadata into a single Int (stored as Byte in table). */
     private fun packData(
         isPrefix: Int, isComplete: Int, isStop: Int,
@@ -379,17 +330,11 @@ object RimeMap {
     }
 
     // ── Vowel combination lookup ─────────────────────────────────
-
-    private fun combineHash(nucLower: String, charLower: Char): Int {
-        // Simple hash: rimeKey of composite string
-        val composite = nucLower + charLower
-        return (rimeKey(composite) * -0x61c88647).toInt() and COMB_MASK
-    }
-
     private fun combineInsert(nucLower: String, charLower: Char, result: String) {
-        var slot = combineHash(nucLower, charLower)
+        val compositeKey = keyCat(nucLower, nucLower.length, charLower)
+        var slot = (compositeKey * -0x61c88647).toInt() and COMB_MASK
         while (_combineKeys[slot] != 0) slot = (slot + 1) and COMB_MASK
-        _combineKeys[slot] = rimeKey(nucLower + charLower)
+        _combineKeys[slot] = compositeKey
         _combineVals[slot] = result
     }
 
@@ -401,13 +346,11 @@ object RimeMap {
     @JvmStatic
     fun combineNucleus(nucleus: String, char: Char): String? {
         val nLower = nucleus.lowercase()
-        val cLower = char.lowercaseChar()
-        val key = rimeKey(nLower + cLower)
-        var slot = (rimeKey(nLower + cLower) * -0x61c88647).toInt() and COMB_MASK
+        val compositeKey = keyCat(nLower, nLower.length, char)
+        var slot = (compositeKey * -0x61c88647).toInt() and COMB_MASK
         while (true) {
-            if (_combineKeys[slot] == key) {
+            if (_combineKeys[slot] == compositeKey) {
                 val result = _combineVals[slot]
-                // Apply casing: first char inherits nucleus case, rest inherit char case
                 val nucleusUpper = nucleus.isNotEmpty() && nucleus[0].isUpperCase()
                 val charUpper = char.isUpperCase()
                 val len = result.length
@@ -700,14 +643,4 @@ object RimeMap {
         return String(buf)
     }
 
-    // ── Legacy compatibility (kept for minimal churn) ──────────────
-
-    /** Legacy hash function — now just a thin wrapper over [rimeKey]. */
-    @JvmStatic @JvmOverloads
-    fun hash(cs: CharSequence, start: Int = 0, length: Int = cs.length - start): Long =
-        rimeKey(cs, start, length).toLong()
-
-    @JvmStatic
-    fun hashCat(a: CharSequence, aLen: Int, b: CharSequence, bLen: Int): Long =
-        rimeKeyCat(a, aLen, b, bLen).toLong()
 }

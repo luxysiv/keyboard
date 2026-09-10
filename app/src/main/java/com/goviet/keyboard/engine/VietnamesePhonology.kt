@@ -27,6 +27,17 @@ object VietnamesePhonology {
     /** Telex vowel modifier keys (fold triggers): e(→ê), o(→ô), a(→â), w(→ă/ơ/ư). */
     val VOWEL_MOD_KEYS = "eoaw"
 
+    // ── BooleanArray(512) fast-path lookups (O(1), zero allocation) ──
+    private val BASE_VOWEL_SET = BooleanArray(512).also { arr ->
+        for (c in BASE_VOWELS) arr[c.code] = true
+    }
+    private val TONE_KEY_SET = BooleanArray(512).also { arr ->
+        for (c in TONE_KEYS) arr[c.code] = true
+    }
+    private val VOWEL_MOD_SET = BooleanArray(512).also { arr ->
+        for (c in VOWEL_MOD_KEYS) arr[c.code] = true
+    }
+
 
     private val VOWELS = setOf(
         'a', 'ă', 'â', 'e', 'ê', 'i', 'y', 'o', 'ô', 'ơ', 'u', 'ư',
@@ -36,6 +47,10 @@ object VietnamesePhonology {
         'ã', 'ẵ', 'ẫ', 'ẽ', 'ễ', 'ĩ', 'ỹ', 'õ', 'ỗ', 'ỡ', 'ũ', 'ữ',
         'ạ', 'ặ', 'ậ', 'ẹ', 'ệ', 'ị', 'ỵ', 'ọ', 'ộ', 'ợ', 'ụ', 'ự'
     )
+    // Accented vowels go up to ự (U+1EF1 = 7855) — need 8192 slots.
+    private val VOWEL_SET = BooleanArray(8192).also { arr ->
+        for (c in VOWELS) arr[c.code] = true
+    }
 
     /** All valid Vietnamese onsets — delegated to [OnsetMap]. */
     val ONSETS = OnsetMap.ALL_ONSETS
@@ -49,13 +64,31 @@ object VietnamesePhonology {
      * True if [c] is one of the 12 base Vietnamese vowels (unaccented), used while
      * actively composing Telex input where accents are applied separately.
      */
-    fun isBaseVowel(c: Char): Boolean = c.lowercaseChar() in BASE_VOWELS
+    fun isBaseVowel(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until 512 && BASE_VOWEL_SET[code]
+    }
 
     /**
      * True if [c] is any Vietnamese vowel including accented variants, used when
      * recognizing already-tone-marked completed words.
      */
-    fun isVowel(c: Char): Boolean = c.lowercaseChar() in VOWELS
+    fun isVowel(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until VOWEL_SET.size && VOWEL_SET[code]
+    }
+
+    /** Telex tone key (s/f/r/x/j/z) — O(1) BooleanArray lookup. */
+    fun isToneKey(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until 512 && TONE_KEY_SET[code]
+    }
+
+    /** Vowel-modifier/fold key (e/o/a/w) — O(1) BooleanArray lookup. */
+    fun isFoldKey(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until 512 && VOWEL_MOD_SET[code]
+    }
 
 // ============================================================
     // SECTION 2: FLAT MAP RIME DATA (validation, tone placement)
