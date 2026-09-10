@@ -241,8 +241,8 @@ class ImeInputConnectionController(
         }
 
         // 4. Tapping into the middle of an existing Vietnamese word starts the
-        // preedit immediately (Gboard/Unikey style): the underline covers the
-        // prefix before the caret ("tha" in "tha|y") without waiting for a key.
+        // preedit immediately: the underline covers the prefix before the caret
+        // ("tha" in "tha|y") without waiting for a key.
         val ic = service.currentInputConnection
         // Only a deliberate caret move starts the adoption; our recent keystrokes
         // or the caret jump right after a space-commit must not underline the word.
@@ -438,10 +438,10 @@ class ImeInputConnectionController(
 
         val isAtEnd = wordAtCursor != null && wordCursorOffset == wordTextLength
 
-        // Middle-of-word edits adopt only the prefix before the caret (Gboard/Unikey
-        // style): the underline covers the typed part ("tha" in "tha|y"), the rest of
-        // the word stays committed outside the region, and the caret keeps its exact
-        // position instead of jumping to the end of the word.
+        // Middle-of-word edits adopt only the prefix before the caret: the underline
+        // covers the typed part ("tha" in "tha|y"), the rest of the word stays
+        // committed outside the region, and the caret keeps its exact position instead
+        // of jumping to the end of the word.
         val adoptTarget = if (isAtEnd) wordText else wordText.substring(0, wordCursorOffset)
 
         val adoptResult = if (adoptTarget.isNotEmpty() && EditedVietnameseRecognizer.canRecompose(adoptTarget)) {
@@ -473,7 +473,7 @@ class ImeInputConnectionController(
             // Gate adoption by round-trip: the canonical keystrokes must replay to the
             // exact committed word through the same compile path. If not, start fresh —
             // the committed word stays untouched and the next keystroke begins a new
-            // syllable (Unikey/Gboard behaviour), never a divergent interpretation.
+            // syllable, never a divergent interpretation.
             displayBuf.clear()
             inputEngine.compileRaw(canonicalRaw, vietnamese = true, displayBuf)
             if (displayBuf.toStringVal() != adoptTarget) {
