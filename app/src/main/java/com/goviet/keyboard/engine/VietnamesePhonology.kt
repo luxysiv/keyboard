@@ -228,42 +228,14 @@ object VietnamesePhonology {
      * Key insight from Vietnamese phonology:
      *   ư + o → ươ, ư + a → ưa, uơ + i → ươi, uơ + u → ươu.
      */
-    private data class VowelComboRule(
-        val nucleusLower: String,
-        val char: Char,
-        val resultTemplate: String  // 'uppercase' means use char's case for 2nd letter
-    )
-
-    private val VOWEL_COMBINATION_RULES = arrayOf(
-        VowelComboRule("ư", 'o', "ươ"),   // ươ
-        VowelComboRule("ư", 'a', "ưa"),    // ưa
-        VowelComboRule("uơ", 'i', "ươi"),  // ươi
-        VowelComboRule("uơ", 'u', "ươu"),  // ươu
-    )
+    // Vowel combination rules moved to RimeMap.combineNucleus flatmap
 
     /**
      * Lookup vowel combination: nucleus + char → expanded nucleus.
-     * Returns null if no special combination applies.
+     * Delegates to RimeMap flatmap (O(1) lookup).
      */
-    fun lookupVowelCombination(nucleus: String, char: Char): String? {
-        val nLower = nucleus.lowercase()
-        val cLower = char.lowercaseChar()
-        for (rule in VOWEL_COMBINATION_RULES) {
-            if (nLower == rule.nucleusLower && cLower == rule.char) {
-                val result = rule.resultTemplate
-                val len = result.length
-                val nucleusUpper = nucleus.isNotEmpty() && nucleus[0].isUpperCase()
-                val charUpper = char.isUpperCase()
-                val buf = CharArray(len)
-                for (i in 0 until len) {
-                    val makeUpper = if (i == 0) nucleusUpper else charUpper
-                    buf[i] = if (makeUpper) result[i].uppercaseChar() else result[i]
-                }
-                return String(buf)
-            }
-        }
-        return null
-    }
+    fun lookupVowelCombination(nucleus: String, char: Char): String? =
+        RimeMap.combineNucleus(nucleus, char)
 
     // ============================================================
     // TONE PLACEMENT — delegates to RimeMap (zero-GC)

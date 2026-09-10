@@ -116,6 +116,15 @@ object RimeMap {
     private lateinit var _fold: LongArray    // per-nucleus fold targets (e/o/a + w-primary)
     private lateinit var _foldW: IntArray    // per-nucleus w alt variant + flags
 
+    // Vowel combination map: (nucleus, char) → combined nucleus
+    // Small flatmap for the 4 valid Vietnamese vowel combinations:
+    // ư+o→ươ, ư+a→ưa, uơ+i→ươi, uơ+u→ươu
+    private const val COMB_BITS = 4
+    private const val COMB_SIZE = 1 shl COMB_BITS
+    private const val COMB_MASK = COMB_SIZE - 1
+    private lateinit var _combineKeys: IntArray
+    private lateinit var _combineVals: Array<String>
+
     // Data byte layout:
     //   bit 0: isPrefix  (valid prefix of some rime)
     //   bit 1: isComplete (complete valid rime)
@@ -152,6 +161,15 @@ object RimeMap {
         _data = ByteArray(TABLE_SIZE)
         _fold = LongArray(TABLE_SIZE)
         _foldW = IntArray(TABLE_SIZE)
+
+        // ── Vowel combination map ──────────────────────────────────
+        _combineKeys = IntArray(COMB_SIZE)
+        _combineVals = arrayOf("", "", "", "", "", "", "", "",
+                               "", "", "", "", "", "", "", "")
+        combineInsert("ư", 'o', "ươ")
+        combineInsert("ư", 'a', "ưa")
+        combineInsert("uơ", 'i', "ươi")
+        combineInsert("uơ", 'u', "ươu")
 
         // ── Nuclei and their valid codas (from phonology table) ────
         //
@@ -357,6 +375,51 @@ object RimeMap {
                 return
             }
             slot = (slot + 1) and TABLE_MASK
+        }
+    }
+
+    // ── Vowel combination lookup ─────────────────────────────────
+
+    private fun combineHash(nucLower: String, charLower: Char): Int {
+        // Simple hash: rimeKey of composite string
+        val composite = nucLower + charLower
+        return (rimeKey(composite) * -0x61c88647).toInt() and COMB_MASK
+    }
+
+    private fun combineInsert(nucLower: String, charLower: Char, result: String) {
+        var slot = combineHash(nucLower, charLower)
+        while (_combineKeys[slot] != 0) slot = (slot + 1) and COMB_MASK
+        _combineKeys[slot] = rimeKey(nucLower + charLower)
+        _combineVals[slot] = result
+    }
+
+    /**
+     * Vowel combination lookup: nucleus + char → combined nucleus.
+     * Returns null if no special combination applies.
+     * O(1) flatmap lookup, zero boxing.
+     */
+    @JvmStatic
+    fun combineNucleus(nucleus: String, char: Char): String? {
+        val nLower = nucleus.lowercase()
+        val cLower = char.lowercaseChar()
+        val key = rimeKey(nLower + cLower)
+        var slot = (rimeKey(nLower + cLower) * -0x61c88647).toInt() and COMB_MASK
+        while (true) {
+            if (_combineKeys[slot] == key) {
+                val result = _combineVals[slot]
+                // Apply casing: first char inherits nucleus case, rest inherit char case
+                val nucleusUpper = nucleus.isNotEmpty() && nucleus[0].isUpperCase()
+                val charUpper = char.isUpperCase()
+                val len = result.length
+                val buf = CharArray(len)
+                for (i in 0 until len) {
+                    val makeUpper = if (i == 0) nucleusUpper else charUpper
+                    buf[i] = if (makeUpper) result[i].uppercaseChar() else result[i]
+                }
+                return String(buf)
+            }
+            if (_combineKeys[slot] == 0) return null
+            slot = (slot + 1) and COMB_MASK
         }
     }
 
