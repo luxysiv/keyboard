@@ -52,7 +52,8 @@ object OnsetMap {
 
     private lateinit var _keys: IntArray
     private lateinit var _data: ByteArray
-    // bit 0: isComplete, bit 1: isPrefix (of some longer onset)
+    // bit 0: isComplete, bit 1: isPrefix (of some longer onset),
+    // bit 2: allows the OPEN rime "uơ" (huơ, thuở, khuơ, quơ, luơ…)
 
     init { build() }
 
@@ -62,6 +63,10 @@ object OnsetMap {
         // Insert all complete onsets (NO prefix entries for single chars
         // like 'q' — those are handled by isPrefixOfCompound).
         for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
+        // Onsets after which the open rime "uơ" is real (list from the actual
+        // words containing the vần "uơ": huơ, thuở, khuơ, quơ, luơ).
+        val openUoOnsets = arrayOf("h", "th", "kh", "qu", "l")
+        for (o in openUoOnsets) insertOr(onsetKey(o), 0x04)
     }
 
     private fun insertOr(key: Int, data: Int) {
@@ -106,5 +111,15 @@ object OnsetMap {
         if (length == 0) return false
         val i = find(onsetKey(onset, start, length))
         return i >= 0 && (_data[i].toInt() and 1) != 0
+    }
+
+    /**
+     * True when the open rime "uơ" is valid after this onset
+     * (empty onset → true: "uơ" itself is a real syllable).
+     */
+    fun allowsOpenUo(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean {
+        if (length == 0) return true
+        val i = find(onsetKey(onset, start, length))
+        return i >= 0 && (_data[i].toInt() and 4) != 0
     }
 }

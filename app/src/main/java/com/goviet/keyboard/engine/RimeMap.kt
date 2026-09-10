@@ -113,12 +113,36 @@ object RimeMap {
 
     private lateinit var _keys: IntArray     // rime keys (0 = empty slot)
     private lateinit var _data: ByteArray    // packed flags per entry
+    private lateinit var _fold: LongArray    // per-nucleus fold targets (e/o/a + w-primary)
+    private lateinit var _foldW: IntArray    // per-nucleus w alt variant + flags
 
     // Data byte layout:
     //   bit 0: isPrefix  (valid prefix of some rime)
     //   bit 1: isComplete (complete valid rime)
     //   bit 2: isStop    (stop coda: c, ch, p, t)
     //   bits 3-4: tonePosition (0-2)
+    //
+    // Fold-target tables (`_fold`, `_foldW`) carry Telex fold data as fields
+    // on the flat-map values — one O(1) lookup answers BOTH "what does this
+    // nucleus fold to" AND "where the tone lands".  No separate rule tables.
+    //
+    // `_fold[slot]` (nucleus entries only):
+    //   bits 0-15:  'e' fold code
+    //   bits 16-31: 'o' fold code
+    //   bits 32-47: 'a' fold code
+    //   bits 48-63: 'w' primary fold code
+    //
+    // `_foldW[slot]`:
+    //   bits 0-15:  'w' alt fold code (dual-variant uo→uơ/ươ)
+    //   bit 16:     primary code uses lookahead (ua/oa/uo)
+    //   bit 17:     alt code uses lookahead (uo)
+    //   bit 30:     nucleus is a w-compound display form (uơ/ươ/ưa/oă…)
+    //
+    // A 16-bit fold code:
+    //   bits 0-2:  primary position in nucleus
+    //   bits 3-7:  primary replacement char index (31 = invalid/none)
+    //   bits 8-10: secondary position (compound folds)
+    //   bits 11-15: secondary replacement char index (31 = none)
 
     /** Initialize the flat map.  Called once at class load time. */
     init { build() }
@@ -126,6 +150,8 @@ object RimeMap {
     private fun build() {
         _keys = IntArray(TABLE_SIZE)
         _data = ByteArray(TABLE_SIZE)
+        _fold = LongArray(TABLE_SIZE)
+        _foldW = IntArray(TABLE_SIZE)
 
         // ── Nuclei and their valid codas (from phonology table) ────
         //
@@ -216,7 +242,22 @@ object RimeMap {
         for (spec in NUCLEI) {
             allRimes.add(spec.nucleus)
             val nucKey = rimeKey(spec.nucleus)
-            tableInsert(nucKey, packData(1, 1, 0, spec.tnNew, spec.tnOld))
+            val slot = tableInsert(nucKey, packData(1, 1, 0, spec.tnNew, spec.tnOld))
+            val w = computeFoldW(spec.nucleus)
+            val wPrimary = (w and 0xFFFF).toInt()
+            val wAlt = ((w ushr 16) and 0xFFFF).toInt()
+            val wPrimaryLA = ((w ushr 32) and 1L) != 0L
+            val wAltLA = ((w ushr 33) and 1L) != 0L
+            _fold[slot] =
+                (computeFoldE(spec.nucleus).toLong() and 0xFFFF) or
+                ((computeFoldO(spec.nucleus).toLong() and 0xFFFF) shl 16) or
+                ((computeFoldA(spec.nucleus).toLong() and 0xFFFF) shl 32) or
+                ((wPrimary.toLong() and 0xFFFF) shl 48)
+            _foldW[slot] =
+                (wAlt and 0xFFFF) or
+                (if (wPrimaryLA) (1 shl 16) else 0) or
+                (if (wAltLA) (1 shl 17) else 0) or
+                (if (isWCompoundForm(spec.nucleus)) (1 shl 30) else 0)
 
             for (c in spec.codas) {
                 val rime = spec.nucleus + c
@@ -297,11 +338,12 @@ object RimeMap {
 
     private fun tableHash(key: Int): Int = (key * -0x61c88647).toInt() and TABLE_MASK
 
-    private fun tableInsert(key: Int, data: Int) {
+    private fun tableInsert(key: Int, data: Int): Int {
         var slot = tableHash(key)
         while (_keys[slot] != 0) slot = (slot + 1) and TABLE_MASK
         _keys[slot] = key
         _data[slot] = data.toByte()
+        return slot
     }
 
     private fun tableInsertIfAbsent(key: Int, data: Int) {
@@ -429,6 +471,164 @@ object RimeMap {
         i = 0
         while (i < extLen) { chars = (chars shl 5) or charIndex(ext[i]); i++ }
         return ((baseLen + extLen) shl 25) or chars
+    }
+
+    // ── Fold-target data (fields on the flat-map value) ───────────
+    //
+    // The Telex fold targets are baked into the map at build time, so the
+    // composer decides folds by lookup, not by if/else rule chains:
+    //   'a' → a/ă → â,  'e' → e → ê,  'o' → o/ơ → ô,
+    //   'w' → uo/uô → ươ|uơ, ua → ưa, oa → oă, and singles a→ă, o→ơ, u→ư.
+    // The uo→uơ fold-back guard ("uowo stays uơo") is expressed here as
+    // *absent* fold data on the "uơ" nucleus, not as a runtime comparison.
+
+    private const val NO_FOLD_CHAR = 31
+    private val CHAR_AT = RIME_ALPHA.toCharArray()
+
+    /** Pack a single-char fold replacement at [pos1]. */
+    private fun foldCode(pos1: Int, c1: Char): Int =
+        (pos1 and 7) or (charIndex(c1) shl 3) or (NO_FOLD_CHAR shl 11)
+
+    /** Pack a two-char compound fold replacement starting at [pos1]. */
+    private fun foldCode(pos1: Int, c1: Char, pos2: Int, c2: Char): Int =
+        (pos1 and 7) or (charIndex(c1) shl 3) or ((pos2 and 7) shl 8) or (charIndex(c2) shl 11)
+
+    /** 'e' fold: first plain 'e' → ê. */
+    private fun computeFoldE(nuc: String): Int {
+        val n = nuc.lowercase()
+        for (i in n.indices) if (n[i] == 'e') return foldCode(i, 'ê')
+        return 0
+    }
+
+    /** 'o' fold: first plain 'o' → ô; 'ơ' → ô only when not the uo→uơ compound. */
+    private fun computeFoldO(nuc: String): Int {
+        val n = nuc.lowercase()
+        for (i in n.indices) {
+            if (n[i] == 'o') return foldCode(i, 'ô')
+            if (n[i] == 'ơ' && !(i > 0 && n[i - 1] == 'u')) return foldCode(i, 'ô')
+        }
+        return 0
+    }
+
+    /** 'a' fold: first plain 'a' or 'ă' → â. */
+    private fun computeFoldA(nuc: String): Int {
+        val n = nuc.lowercase()
+        for (i in n.indices) {
+            if (n[i] == 'a') return foldCode(i, 'â')
+            if (n[i] == 'ă') return foldCode(i, 'â')
+        }
+        return 0
+    }
+
+    /**
+     * 'w' fold targets, packed:
+     *   bits 0-15   primary code
+     *   bits 16-31  alt code (dual-variant uo/uô → uơ)
+     *   bit 32      primary uses lookahead
+     *   bit 33      alt uses lookahead
+     */
+    private fun computeFoldW(nuc: String): Long {
+        val n = nuc.lowercase()
+        val uo = n.indexOf("uo")
+        if (uo >= 0) {
+            val prim = foldCode(uo, 'ư', uo + 1, 'ơ').toLong()   // ươ
+            val alt = foldCode(uo, 'u', uo + 1, 'ơ').toLong()    // uơ (anchor on u)
+            return prim or (alt shl 16) or (0b11L shl 32)
+        }
+        val uoHorn = n.indexOf("uô")
+        if (uoHorn >= 0) {
+            val prim = foldCode(uoHorn, 'ư', uoHorn + 1, 'ơ').toLong()   // ươ
+            val alt = foldCode(uoHorn, 'u', uoHorn + 1, 'ơ').toLong()    // uơ
+            return prim or (alt shl 16) or (0b11L shl 32)
+        }
+        if (n.contains("ươ")) return 0L                       // already horned — no-op
+        val ua = n.indexOf("ua")
+        if (ua >= 0) return foldCode(ua, 'ư').toLong() or (1L shl 32)    // ưa
+        val oa = n.indexOf("oa")
+        if (oa >= 0) return foldCode(oa + 1, 'ă').toLong() or (1L shl 32) // oă
+        for (i in n.indices) {
+            if (n[i] == 'u') {
+                val next = i + 1
+                val nextIsOA = next < n.length && (n[next] == 'o' || n[next] == 'a')
+                if (!nextIsOA) return foldCode(i, 'ư').toLong()
+                break
+            }
+        }
+        for (i in n.indices) {
+            if (n[i] == 'o' && !(i > 0 && n[i - 1] == 'u')) return foldCode(i, 'ơ').toLong()
+        }
+        val a = n.indexOf('a')
+        if (a >= 0) return foldCode(a, 'ă').toLong()
+        return 0L
+    }
+
+    /** True if [nuc] is a w-compound display form (uơ/ươ/ưa/oă or derivative). */
+    private fun isWCompoundForm(nuc: String): Boolean {
+        val n = nuc.lowercase()
+        return n.contains("ươ") || n.contains("uơ") || n.contains("ưa") || n.contains("oă")
+    }
+
+    /** Primary fold code for [foldKey] on the nucleus with key [nucleusKey]; 0 = none. */
+    @JvmStatic
+    fun foldPrimary(nucleusKey: Int, foldKey: Char): Int {
+        val slot = find(nucleusKey)
+        if (slot < 0) return 0
+        val f = _fold[slot]
+        return when (foldKey.lowercaseChar()) {
+            'e' -> (f and 0xFFFF).toInt()
+            'o' -> ((f ushr 16) and 0xFFFF).toInt()
+            'a' -> ((f ushr 32) and 0xFFFF).toInt()
+            'w' -> ((f ushr 48) and 0xFFFF).toInt()
+            else -> 0
+        }
+    }
+
+    /** Alt fold code for the 'w' fold (dual-variant uo/uô); 0 = none. */
+    @JvmStatic
+    fun foldAlt(nucleusKey: Int): Int {
+        val slot = find(nucleusKey)
+        return if (slot < 0) 0 else _foldW[slot] and 0xFFFF
+    }
+
+    /** True when the primary fold for [nucleusKey] should validate with lookahead. */
+    @JvmStatic
+    fun foldPrimaryLookahead(nucleusKey: Int): Boolean {
+        val slot = find(nucleusKey)
+        return slot >= 0 && (_foldW[slot] and (1 shl 16)) != 0
+    }
+
+    /** True when the nucleus itself is a w-compound display form. */
+    @JvmStatic
+    fun isWCompoundForm(nucleusKey: Int): Boolean {
+        val slot = find(nucleusKey)
+        return slot >= 0 && (_foldW[slot] and (1 shl 30)) != 0
+    }
+
+    /** Position where the fold lands (untoggle anchor). */
+    @JvmStatic
+    fun foldPos(code: Int): Int = code and 7
+
+    /** Apply a fold [code] to [nucleus], preserving casing.  Zero boxing. */
+    @JvmStatic
+    fun applyFold(nucleus: String, code: Int): String {
+        if (code == 0) return nucleus
+        val c1 = (code ushr 3) and 0x1F
+        val p1 = code and 7
+        if (c1 >= CHAR_AT.size || p1 >= nucleus.length) return nucleus
+        val len = nucleus.length
+        val buf = CharArray(len)
+        nucleus.toCharArray(buf, 0, 0, len)
+        val ch1 = CHAR_AT[c1]
+        buf[p1] = if (buf[p1].isUpperCase()) ch1.uppercaseChar() else ch1
+        val c2 = (code ushr 11) and 0x1F
+        if (c2 < CHAR_AT.size) {
+            val p2 = (code ushr 8) and 7
+            if (p2 < len) {
+                val ch2 = CHAR_AT[c2]
+                buf[p2] = if (buf[p2].isUpperCase()) ch2.uppercaseChar() else ch2
+            }
+        }
+        return String(buf)
     }
 
     // ── Legacy compatibility (kept for minimal churn) ──────────────

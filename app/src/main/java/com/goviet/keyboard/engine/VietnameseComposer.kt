@@ -35,7 +35,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     // ── Fold key set ───────────────────────────────────────────────
     private val FOLD_KEYS = setOf('e', 'o', 'a', 'w')
-    private val VALID_UO_ONSETS = setOf("", "h", "th", "kh", "qu", "l")
 
     // ── Data types ─────────────────────────────────────────────────
 
@@ -166,13 +165,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             else break
         }
         return sb.toString()
-    }
-
-    /** True if the nucleus already contains a w-compound (uơ, ươ, ưa, oă). */
-    private fun nucHasWCompound(nucleus: String): Boolean {
-        val n = nucleus.lowercase()
-        return n.contains("ươ") || n.contains("uơ") ||
-            n.contains("ưa") || n.contains("oă")
     }
 
     private fun resegment(raw: CharSequence, out: SyllableState) {
@@ -306,7 +298,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 // is absorbed: the compound fold's toggle cycle is already consumed,
                 // so it must not unfold back to "uo"+"w" (fixes huowwngs → hướng).
                 if (cLow == 'w' && !syllableLocked && lastFoldKey == 'w' &&
-                    out.nucleus.isNotEmpty() && nucHasWCompound(out.nucleus)) {
+                    out.nucleus.isNotEmpty() &&
+                    RimeMap.isWCompoundForm(RimeMap.rimeKey(out.nucleus))) {
                     lastFoldKey = '\u0000'
                     pos++; continue
                 }
@@ -412,158 +405,55 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     }
 
     /**
-     * Apply Telex fold rules for the given key at raw position [pos].
-     * Returns true if a fold was applied to [out.nucleus].
+     * Apply the Telex fold for [c] by reading the fold-target data baked into
+     * [RimeMap] for the current nucleus — no per-rule if/else, no hardcoded
+     * vowel-pair comparisons.  Returns the nucleus index where the fold landed
+     * (untoggle anchor), or -1 when no fold applies.
      */
-    private fun applyFoldRules(c: Char, pos: Int, raw: CharSequence, out: SyllableState): Int {
+    private fun applyFoldRules(c: Char, rawPos: Int, raw: CharSequence, out: SyllableState): Int {
         val nuc = out.nucleus
-        val nucLower = nuc.lowercase()
-        val onsetLower = out.onset.lowercase()
-        val cLow = c.lowercaseChar()
+        val nucKey = RimeMap.rimeKey(nuc)
+        val primary = RimeMap.foldPrimary(nucKey, c)
+        if (primary == 0) return -1
+        val alt = if (c == 'w') RimeMap.foldAlt(nucKey) else 0
 
-        if (cLow == 'a') {
-            val idx = findFoldTarget(nucLower, charArrayOf('a', 'ă'))
-            if (idx >= 0 && nucLower[idx] != 'â') {
-                val replacement = if (nuc[idx].isUpperCase()) 'Â' else 'â'
-                val newNuc = replaceAt(nuc, idx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return idx }
+        if (alt == 0) {
+            // Single-target fold (a→â, e→ê, o→ô, w singles, ua→ưa, oa→oă):
+            // validate against the current coda, plus the predicted tail when
+            // the map says this fold is lookahead-sensitive.
+            val newNuc = RimeMap.applyFold(nuc, primary)
+            var ok = isValidRime(newNuc, out.coda)
+            if (!ok && RimeMap.foldPrimaryLookahead(nucKey)) {
+                val tail = predictConsonantTail(raw, rawPos + 1)
+                if (tail.isNotEmpty()) ok = isValidRime(newNuc, out.coda + tail)
             }
-            return -1
+            if (!ok) return -1
+            out.nucleus = newNuc
+            return RimeMap.foldPos(primary)
         }
 
-        if (cLow == 'e') {
-            val idx = findFoldTarget(nucLower, charArrayOf('e'))
-            if (idx >= 0 && nucLower[idx] != 'ê') {
-                val replacement = if (nuc[idx].isUpperCase()) 'Ê' else 'ê'
-                val newNuc = replaceAt(nuc, idx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return idx }
+        // Dual-variant w-compound (uo/uô → uơ/ươ): both candidates come from
+        // the map; pick the one whose rime — including the predicted coda tail —
+        // validates via RimeMap.  Tie-break (both open rimes valid) by onset:
+        // the open "uơ" form only exists after the onsets listed in OnsetMap.
+        val tail = predictConsonantTail(raw, rawPos + 1)
+        val candCoda = out.coda + tail
+        val primNuc = RimeMap.applyFold(nuc, primary)
+        val altNuc = RimeMap.applyFold(nuc, alt)
+        val primValid = isValidRime(primNuc, candCoda)
+        val altValid = isValidRime(altNuc, candCoda)
+        val chosen: String? = when {
+            primValid && !altValid -> primNuc
+            altValid && !primValid -> altNuc
+            primValid && altValid -> {
+                val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
+                if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
             }
-            return -1
+            else -> null
         }
-
-        if (cLow == 'o') {
-            val idx = findFoldTarget(nucLower, charArrayOf('o', 'ơ'))
-            if (idx >= 0 && nucLower[idx] != 'ô') {
-                // Standard Telex: "uoo" types uô (luoon -> luôn, uoongs -> uống).
-                // Only guard the w-compound form: 'ơ' from uo→uơ must not be
-                // folded back to 'ô' by a later 'o' (uowo stays uơo).
-                if (idx > 0 && nucLower[idx - 1] == 'u' && nucLower[idx] == 'ơ') return -1
-                val replacement = if (nuc[idx].isUpperCase()) 'Ô' else 'ô'
-                val newNuc = replaceAt(nuc, idx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return idx }
-            }
-            return -1
-        }
-
-        if (cLow == 'w') {
-            // ── uo → uơ or Ươ (lookahead + RimeMap) ──────────────
-            // Rule: hornU = hasCoda || onsetLower !in VALID_UO_ONSETS
-            // With lookahead: test both variants against predicted tail via RimeMap.
-            // Without lookahead: apply onset-based heuristic.
-            val uoIdx = findFoldTarget(nucLower, charArrayOf('u'))
-            if (uoIdx >= 0 && uoIdx + 1 < nuc.length && (nucLower[uoIdx + 1] == 'o' || nucLower[uoIdx + 1] == 'ô')) {
-                // If vowel combo already fired (uô), normalize back to 'uo' for fold
-                val normNuc = if (nucLower[uoIdx + 1] == 'ô') replaceAt(nuc, uoIdx + 1, 'o') else nuc
-                val uoHasCoda = out.coda.isNotEmpty()
-                val uoShouldHorn = uoHasCoda || onsetLower !in VALID_UO_ONSETS
-                val predictedTail = predictConsonantTail(raw, pos + 1)
-                if (predictedTail.isNotEmpty()) {
-                    // RimeMap-based: pick variant whose rime (with predicted tail) is valid
-                    val hornNuc = normNuc.replaceRange(uoIdx, uoIdx + 2,
-                        VietnamesePhonology.buildUoPair(normNuc[uoIdx], normNuc[uoIdx + 1], true))
-                    val noHornNuc = normNuc.replaceRange(uoIdx, uoIdx + 2,
-                        VietnamesePhonology.buildUoPair(normNuc[uoIdx], normNuc[uoIdx + 1], false))
-                    val hornValid = isValidRime(hornNuc, out.coda + predictedTail)
-                    val noHornValid = isValidRime(noHornNuc, out.coda + predictedTail)
-                    val chosen = when {
-                        hornValid && !noHornValid -> hornNuc
-                        noHornValid && !hornValid -> noHornNuc
-                        // Both valid or both invalid: use onset heuristic
-                        uoShouldHorn && hornValid -> hornNuc
-                        !uoShouldHorn && noHornValid -> noHornNuc
-                        hornValid -> hornNuc
-                        else -> null
-                    }
-                    if (chosen != null) { out.nucleus = chosen; return uoIdx }
-                } else {
-                    // No lookahead: try both variants via RimeMap, prefer heuristic match
-                    val hornNuc = normNuc.replaceRange(uoIdx, uoIdx + 2,
-                        VietnamesePhonology.buildUoPair(normNuc[uoIdx], normNuc[uoIdx + 1], true))
-                    val noHornNuc = normNuc.replaceRange(uoIdx, uoIdx + 2,
-                        VietnamesePhonology.buildUoPair(normNuc[uoIdx], normNuc[uoIdx + 1], false))
-                    val hornValid = isValidRime(hornNuc, out.coda)
-                    val noHornValid = isValidRime(noHornNuc, out.coda)
-                    val chosen = when {
-                        hornValid && !noHornValid -> hornNuc
-                        noHornValid && !hornValid -> noHornNuc
-                        uoShouldHorn && hornValid -> hornNuc
-                        !uoShouldHorn && noHornValid -> noHornNuc
-                        hornValid -> hornNuc
-                        else -> null
-                    }
-                    if (chosen != null) { out.nucleus = chosen; return uoIdx }
-                }
-            }
-            // ươ already present → no-op
-            if (nucLower.contains("ươ")) return -1
-            // ── ua → ưa (lookahead + RimeMap) ──────────────────────
-            val uaIdx = findFoldTarget(nucLower, charArrayOf('u'))
-            if (uaIdx >= 0 && uaIdx + 1 < nuc.length && nucLower[uaIdx + 1] == 'a') {
-                val predictedTail = predictConsonantTail(raw, pos + 1)
-                val hornU = nuc[uaIdx].isUpperCase()
-                val aChar = nuc[uaIdx + 1].isUpperCase()
-                val hornStr = (if (hornU) "Ư" else "ư") + (if (aChar) "A" else "a")
-                val hornNuc = nuc.replaceRange(uaIdx, uaIdx + 2, hornStr)
-                if (predictedTail.isNotEmpty()) {
-                    if (isValidRime(hornNuc, out.coda + predictedTail)) { out.nucleus = hornNuc; return uaIdx }
-                } else {
-                    if (isValidRime(hornNuc, out.coda)) { out.nucleus = hornNuc; return uaIdx }
-                }
-            }
-            // ── oa → oă (lookahead + RimeMap) ──────────────────────
-            val oaIdx = findFoldTarget(nucLower, charArrayOf('o'))
-            if (oaIdx >= 0 && oaIdx + 1 < nuc.length && nucLower[oaIdx + 1] == 'a') {
-                val predictedTail = predictConsonantTail(raw, pos + 1)
-                val hornO = nuc[oaIdx].isUpperCase()
-                val aChar = nuc[oaIdx + 1].isUpperCase()
-                val hornStr = (if (hornO) "O" else "o") + (if (aChar) "Ă" else "ă")
-                val hornNuc = nuc.replaceRange(oaIdx, oaIdx + 2, hornStr)
-                if (predictedTail.isNotEmpty()) {
-                    if (isValidRime(hornNuc, out.coda + predictedTail)) { out.nucleus = hornNuc; return oaIdx }
-                } else {
-                    if (isValidRime(hornNuc, out.coda)) { out.nucleus = hornNuc; return oaIdx }
-                }
-            }
-            // Single-tile: u→ư (not ư, not after q, not before o/a — compound handled above)
-            val uIdx = findFoldTarget(nucLower, charArrayOf('u'))
-            if (uIdx >= 0 && nucLower[uIdx] != 'ư' && onsetLower != "q"
-                && !(uIdx + 1 < nuc.length && (nucLower[uIdx + 1] == 'o' || nucLower[uIdx + 1] == 'a'))) {
-                val replacement = if (nuc[uIdx].isUpperCase()) 'Ư' else 'ư'
-                val newNuc = replaceAt(nuc, uIdx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return uIdx }
-            }
-            // o→ơ (not ô,ơ, not after u — compound handled above)
-            val oIdx = findFoldTarget(nucLower, charArrayOf('o'))
-            if (oIdx >= 0 && nucLower[oIdx] != 'ơ' && nucLower[oIdx] != 'ô'
-                && !(oIdx > 0 && nucLower[oIdx - 1] == 'u')) {
-                val replacement = if (nuc[oIdx].isUpperCase()) 'Ơ' else 'ơ'
-                val newNuc = replaceAt(nuc, oIdx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return oIdx }
-            }
-            // a→ă (not ă,â)
-            val aIdx = findFoldTarget(nucLower, charArrayOf('a'))
-            if (aIdx >= 0 && nucLower[aIdx] != 'ă' && nucLower[aIdx] != 'â') {
-                val replacement = if (nuc[aIdx].isUpperCase()) 'Ă' else 'ă'
-                val newNuc = replaceAt(nuc, aIdx, replacement)
-                if (isValidRime(newNuc, out.coda)) { out.nucleus = newNuc; return aIdx }
-            }
-        }
-        return -1
-    }
-
-    private fun findFoldTarget(nuc: String, targets: CharArray): Int {
-        for (i in 0 until nuc.length) for (t in targets) if (nuc[i] == t) return i
-        return -1
+        if (chosen == null) return -1
+        out.nucleus = chosen
+        return RimeMap.foldPos(primary)
     }
 
     private fun isValidRime(nucleus: String, coda: String): Boolean {

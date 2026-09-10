@@ -2,6 +2,7 @@ package com.goviet.keyboard.engine
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -257,6 +258,28 @@ class VietnameseComposerTest {
 
         // 'o' after the w-compound ơ (uowo -> uơo) must NOT re-fold to uô
         assertEquals("uơo", engine.process("uowo"))
+    }
+
+    @Test
+    fun testFoldTargetsLiveOnRimeMapBitmap() {
+        // The uo/uô/uơ/ươ keys must not collide in the packed 25-bit key space.
+        assertNotEquals(RimeMap.rimeKey("uo"), RimeMap.rimeKey("uô"))
+        assertNotEquals(RimeMap.rimeKey("uo"), RimeMap.rimeKey("uơ"))
+        assertNotEquals(RimeMap.rimeKey("uơ"), RimeMap.rimeKey("ươ"))
+
+        // Fold decisions come from the map values, not if/else chains:
+        //   uo + 'o' -> uô  (Telex "uoo"),  uo + 'w' -> ươ with alt uơ.
+        val uoKey = RimeMap.rimeKey("uo")
+        assertEquals("uô", RimeMap.applyFold("uo", RimeMap.foldPrimary(uoKey, 'o')))
+        assertEquals("ươ", RimeMap.applyFold("uo", RimeMap.foldPrimary(uoKey, 'w')))
+        assertEquals("uơ", RimeMap.applyFold("uo", RimeMap.foldAlt(uoKey)))
+
+        // The w-compound result "uơ" carries NO 'o' fold — pressing 'o' after it
+        // (uowo) must not fold back to uô.  Absence is the data, not a guard.
+        assertEquals(0, RimeMap.foldPrimary(RimeMap.rimeKey("uơ"), 'o'))
+
+        // Case is preserved through map-driven folds (LUOON -> LUÔN).
+        assertEquals("LUÔN", engine.process("LUOON"))
     }
 
     @Test
@@ -2031,4 +2054,3 @@ class VietnameseComposerTest {
         assertEquals("thê", engine.processKey('e').text)
     }
 }
-
