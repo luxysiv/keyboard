@@ -169,8 +169,8 @@ class BackspaceHandler(
                 return
             }
 
-            // Committed text, Gboard/Laban style: remove the whole preceding
-            // Unicode grapheme cluster ('á' -> "", 'nguyễn' -> 'nguyễ').
+            // Committed text: remove the whole preceding Unicode grapheme
+            // cluster ('á' -> "", 'nguyễn' -> 'nguyễ').
             deleteLastGraphemeOrChar(ic)
             controller.service.evaluateAutoShift()
         } finally {

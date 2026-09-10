@@ -71,7 +71,7 @@ class VietnameseInputMethodService : InputMethodService(), LifecycleOwner, ViewM
     val _recentEmojis = MutableStateFlow<List<String>>(emptyList())
     val _recentSymbols = MutableStateFlow<List<String>>(emptyList())
 
-    // Dynamic Fcitx5-like input methods list and active state
+    // Input methods list and the active index of the currently selected one
     val inputMethods = listOf("Vietnamese", "Bamboo", "English", "Pinyin")
     val currentInputMethodIndex = MutableStateFlow(0) // 0: Vietnamese, 1: Bamboo, 2: English, 3: Pinyin
 
