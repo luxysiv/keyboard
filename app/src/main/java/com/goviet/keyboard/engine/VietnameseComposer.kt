@@ -204,11 +204,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             out.onset = raw.subSequence(0, onsetEnd).toString()
         }
 
-        // ── Direct w: solo 'w' goes to onset, not fold to ư ────────
-        // w is not a Vietnamese vowel — it's a horn modifier (Telex).
-        // Solo w at syllable start occupies the onset position so that
-        // following vowels display in the correct order ("wa" not "aw").
-        if (onsetEnd == 0 && len >= 1) {
+        // ── Direct w: when directW option is ON, 'w' at syllable start
+        // goes to onset position (not fold to ư) — types literal 'w'.
+        // When OFF (default Telex), 'w' folds vowels normally: u→ư, o→ơ, etc.
+        if (options.directW && onsetEnd == 0 && len >= 1) {
             val firstLow = raw[0].lowercaseChar()
             if (firstLow == 'w' || firstLow == 'W') {
                 out.onset = if (raw[0].isUpperCase()) "W" else "w"
@@ -227,6 +226,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var justUntoggled = false  // true after fold→untoggle, prevents immediate re-fold
         var toneLocked = false  // true after tone key rejected (not cancelled) for invalid rime
         var wOnsetAbsorbed = false  // true after the first w-absorb after onset 'w' (w+w→w)
+        var wasSoloWFold = false  // true when solo w→ư was applied (empty nucleus + no onset)
 
         while (pos < len) {
             val c = raw[pos]
@@ -310,6 +310,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     wOnsetAbsorbed = true
                     pos++; continue
                 }
+                // Solo 'w' on empty nucleus (directW off): → ư
+                // In default Telex, w acts as horn modifier even standalone.
+                if (!options.directW && cLow == 'w' && out.nucleus.isEmpty() && out.onset.isEmpty()) {
+                    val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
+                    out.nucleus = wChar.toString()
+                    lastFoldKey = 'w'; lastFoldNucIdx = 0; lastFoldRawPos = pos
+                    wasSoloWFold = true
+                    pos++; continue
+                }
                 // Vowel modifier: try fold rules
                 if (!syllableLocked && cLow in FOLD_KEYS && out.nucleus.isNotEmpty() && !justUntoggled) {
                     val foldIdx = applyFoldRules(c, pos, raw, out)
@@ -326,8 +335,16 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (lastFoldKey != '\u0000' && cLow == lastFoldKey &&
                         lastFoldNucIdx >= 0 && lastFoldNucIdx < out.nucleus.length &&
                         out.nucleus[lastFoldNucIdx] != VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx])) {
-                        out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx]))
-                        out.nucleus += c
+                        if (wasSoloWFold) {
+                            // Solo w untoggle: revert ư → clear nucleus, output w as literal
+                            out.nucleus = ""
+                            out.rawSuffix += c
+                            syllableLocked = true; toneLocked = true
+                            wasSoloWFold = false
+                        } else {
+                            out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx]))
+                            out.nucleus += c
+                        }
                         lastFoldKey = '\u0000'; lastFoldNucIdx = -1; lastFoldRawPos = -1
                         justUntoggled = true
                         pos++; continue
@@ -386,6 +403,28 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     val rk = RimeMap.rimeKey(out.nucleus + out.coda + c)
                     if (RimeMap.isValidPrefix(rk) && RimeMap.isToneAllowed(rk, out.tone.index)) {
                         out.coda += c; pos++; continue
+                    }
+                    // Deferred fold lookahead: if the next char in raw is a fold key
+                    // that transforms the nucleus to accept this coda, pre-apply the fold
+                    // and consume the fold key (tuana → tuân: n after "ua", 'a' folds→uâ).
+                    if (out.coda.isEmpty() && pos + 1 < len) {
+                        val nextChar = raw[pos + 1].lowercaseChar()
+                        if (nextChar in FOLD_KEYS) {
+                            val nk = RimeMap.rimeKey(out.nucleus)
+                            val fold = RimeMap.foldPrimary(nk, nextChar)
+                            if (fold != 0) {
+                                val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
+                                if (foldedNuc != out.nucleus) {
+                                    val deferredRk = RimeMap.rimeKey(foldedNuc + c.toString())
+                                    if (RimeMap.isValidPrefix(deferredRk) && RimeMap.isToneAllowed(deferredRk, out.tone.index)) {
+                                        out.nucleus = foldedNuc
+                                        out.coda += c
+                                        pos += 2  // skip coda char + fold key
+                                        continue
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 // Consonants never extend the nucleus (nucleus is vowels-only).
