@@ -80,6 +80,14 @@ class ImeInputConnectionController(
     // Window (ms) during which a self-generated cursor is still considered "ours".
     private val expectedCursorTtlMs: Long = 350
 
+    // Minimum gap between our own setComposingRegion re-announcements. Some editors
+    // (WebView/Chrome) persist in reporting candidatesStart == -1 on every reflection
+    // of our composing span; re-asserting the region on each callback would loop
+    // setComposingRegion -> onUpdateSelection -> setComposingRegion and make the
+    // underline flicker. Throttling breaks that ping-pong.
+    private val composingReannounceMinGapMs: Long = 500
+    private var lastComposingReannounceAt = 0L
+
     fun pushExpectedCursor(cursor: Int) {
         if (cursor < 0) return
         expectedCursorPositions[expectedCursorHead] = cursor
@@ -198,18 +206,26 @@ class ImeInputConnectionController(
         if (isExpected) {
             userMovedCursor = false
             userSelectedText = false
-            // fcitx5 method: when the editor drops our composing span (InputFilter / WebView
-            // reflow), re-announce it so the engine's composing region stays in sync with the
+            // When the editor drops our composing span (InputFilter / WebView reflow),
+            // re-announce it so the engine's composing region stays in sync with the
             // client instead of drifting and eventually making the caret jump.
             if (candidatesStart == -1 && composingRaw.isNotEmpty() && lastDisplay != null &&
                 composingStartInEditor >= 0
             ) {
                 val ic = service.currentInputConnection
                 if (ic != null) {
-                    ic.setComposingRegion(
-                        composingStartInEditor,
-                        composingStartInEditor + lastDisplay.length
-                    )
+                    val now = System.currentTimeMillis()
+                    if (now - lastComposingReannounceAt > composingReannounceMinGapMs) {
+                        lastComposingReannounceAt = now
+                        // The reflection of this re-announcement must not be read as a
+                        // user caret move, otherwise it would commit/clear and re-adopt
+                        // the syllable, blinking the underline.
+                        pushExpectedCursor(newSelStart)
+                        ic.setComposingRegion(
+                            composingStartInEditor,
+                            composingStartInEditor + lastDisplay.length
+                        )
+                    }
                 }
             }
             return
@@ -288,6 +304,11 @@ class ImeInputConnectionController(
         isVietnamese = true
         inputEngine.replayRawToState(adopt.canonicalRaw, composingState)
         lastSetComposingText = prefix
+        // The editor reflects our own setComposingRegion back as an onUpdateSelection;
+        // register the caret so that reflection is consumed as ours instead of being
+        // mistaken for a user move (which would commit/clear and re-adopt, flickering
+        // the underline forever).
+        pushExpectedCursor(word.startInEditor + offset)
         ic.setComposingRegion(word.startInEditor, word.startInEditor + prefix.length)
         userMovedCursor = false
     }
