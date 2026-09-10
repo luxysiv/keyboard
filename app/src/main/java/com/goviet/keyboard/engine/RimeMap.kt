@@ -558,6 +558,13 @@ object RimeMap {
         for (i in n.indices) {
             if (n[i] == 'o' && !(i > 0 && n[i - 1] == 'u')) return foldCode(i, 'ơ').toLong()
         }
+        // Hat-to-default folds: â→ă, ê→e, ô→o, ơ→o (w acts as universal fold modifier)
+        for (i in n.indices) {
+            if (n[i] == 'â') return foldCode(i, 'ă').toLong()
+            if (n[i] == 'ê') return foldCode(i, 'e').toLong()
+            if (n[i] == 'ô') return foldCode(i, 'o').toLong()
+            if (n[i] == 'ơ') return foldCode(i, 'o').toLong()
+        }
         val a = n.indexOf('a')
         if (a >= 0) return foldCode(a, 'ă').toLong()
         return 0L
