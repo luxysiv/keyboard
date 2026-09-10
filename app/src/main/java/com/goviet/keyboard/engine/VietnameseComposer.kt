@@ -300,8 +300,16 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     wOnsetAbsorbed = true
                     pos++; continue
                 }
-                // Solo 'w' on empty nucleus (directW off): → ư
-                // In default Telex, w acts as horn modifier even standalone.
+                // w after consonant onset + empty nucleus → create ư
+                // sw→sư, dw→dư, lw→lư (w creates ư nucleus when no vowel yet)
+                if (!options.directW && cLow == 'w' && !syllableLocked &&
+                    out.nucleus.isEmpty() && out.onset.isNotEmpty() &&
+                    out.onset[0].lowercaseChar() != 'w') {
+                    val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
+                    out.nucleus = wChar.toString()
+                    lastFoldKey = 'w'; lastFoldNucIdx = 0; lastFoldRawPos = pos
+                    pos++; continue
+                }
 
                 // Vowel modifier: try fold rules
                 if (!syllableLocked && cLow in FOLD_KEYS && out.nucleus.isNotEmpty() && !justUntoggled) {
