@@ -197,6 +197,11 @@ class ImeInputConnectionController(
     /** Public wrapper: move the editor caret and register it as ours. */
     fun moveCursorTo(ic: InputConnection, cursor: Int) = selectionGuard.moveTo(ic, cursor)
 
+    /** Public wrapper: register a caret we just wrote, without moving the editor caret
+     *  (used by BackspaceHandler when a composing-text rewrite leaves the caret at the
+     *  end of the preedit). Keeps every caret write registered through the guard. */
+    fun registerCaretAsOurs(cursor: Int) = selectionGuard.register(cursor)
+
     // Cached cursor & selection state pushed by Android OS via onUpdateSelection
     var cachedSelStart: Int = 0
     var cachedSelEnd: Int = 0

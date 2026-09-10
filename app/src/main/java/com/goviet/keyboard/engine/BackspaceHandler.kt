@@ -319,8 +319,14 @@ class BackspaceHandler(
         )
 
         replaceComposingText(ic, display)
-        if (caretInDisplay < display.length && controller.composingStartInEditor >= 0) {
-            controller.moveCursorTo(ic, controller.composingStartInEditor + caretInDisplay)
+        if (controller.composingStartInEditor >= 0) {
+            if (caretInDisplay < display.length) {
+                controller.moveCursorTo(ic, controller.composingStartInEditor + caretInDisplay)
+            } else {
+                // setComposingText(..., 1) leaves the caret at the end of the preedit;
+                // register it so the editor's reflection is consumed as ours.
+                controller.registerCaretAsOurs(controller.composingStartInEditor + display.length)
+            }
         }
     }
 
