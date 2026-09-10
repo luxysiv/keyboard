@@ -383,13 +383,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
             // ── Consonant: try as coda, otherwise literal + lock ───
             if (!syllableLocked && isConsonant(cLow) && out.nucleus.isNotEmpty()) {
-                // Try as coda
-                val codaOk = if (out.coda.isEmpty()) {
-                    cLow == 'm' || cLow == 'p' || cLow == 'n' || cLow == 't' || cLow == 'c'
-                } else if (out.coda.length == 1) {
-                    val c0 = out.coda[0].lowercaseChar()
-                    (c0 == 'n' && (cLow == 'g' || cLow == 'h')) || (c0 == 'c' && cLow == 'h')
-                } else false
+                // Try as coda — RimeMap is the authority (O(1) flatmap lookup)
+                val codaLen = out.coda.length
+                val codaOk = codaLen < 2
                 if (codaOk) {
                     val rk = RimeMap.rimeKey(out.nucleus + out.coda + c)
                     if (RimeMap.isValidPrefix(rk) && RimeMap.isToneAllowed(rk, out.tone.index)) {
