@@ -14,6 +14,7 @@ object OnsetMap {
     // 'w' is NOT an onset consonant; handled separately with W_INDEX.
     private const val ONSET_ALPHA = "aăâeêioôơuưycmntpghbdkđlrsvx"
     private const val W_INDEX = ONSET_ALPHA.length  // 28
+    private val ONSET_AT = ONSET_ALPHA.toCharArray()
     private val CHAR_IDX = IntArray(512).also { arr ->
         for (i in ONSET_ALPHA.indices) arr[ONSET_ALPHA[i].code] = i
         arr['w'.code] = W_INDEX
@@ -52,14 +53,21 @@ object OnsetMap {
 
     private lateinit var _keys: IntArray
     private lateinit var _data: ByteArray
+    private lateinit var _fold: ByteArray
     // bit 0: isComplete, bit 1: isPrefix (of some longer onset),
     // bit 2: allows the OPEN rime "uơ" (huơ, thuở, khuơ, quơ, luơ…)
+    //
+    // `_fold[slot]` carries the Telex fold target for the onset (only d→đ
+    // today), same 16-bit code shape as RimeMap folds — folded down to one
+    // byte since onset folds are always single-char at position 0:
+    //   bits 0-2: position, bits 3-7: replacement char index (0 = no fold).
 
     init { build() }
 
     private fun build() {
         _keys = IntArray(TABLE_SIZE)
         _data = ByteArray(TABLE_SIZE)
+        _fold = ByteArray(TABLE_SIZE)
         // Insert all complete onsets (NO prefix entries for single chars
         // like 'q' — those are handled by isPrefixOfCompound).
         for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
@@ -67,7 +75,15 @@ object OnsetMap {
         // words containing the vần "uơ": huơ, thuở, khuơ, quơ, luơ).
         val openUoOnsets = arrayOf("h", "th", "kh", "qu", "l")
         for (o in openUoOnsets) insertOr(onsetKey(o), 0x04)
+        // Fold target: plain 'd' onset + 'd' → 'đ' (the fold/untoggle cycle is
+        // the SAME mechanism as the nucleus folds — data on the map value).
+        val dSlot = find(onsetKey("d"))
+        if (dSlot >= 0) _fold[dSlot] = foldCode(0, 'đ').toByte()
     }
+
+    /** Pack a single-char onset fold replacement (always position 0 today). */
+    private fun foldCode(pos: Int, to: Char): Int =
+        (pos and 7) or (charIndex(to) shl 3)
 
     private fun insertOr(key: Int, data: Int) {
         var slot = (key * -0x61c88647).toInt() and TABLE_MASK
@@ -105,6 +121,36 @@ object OnsetMap {
      * as a complete onset, only as a prefix that can grow into "qu".
      */
     fun isPrefixOfCompound(c: Char): Boolean = c.lowercaseChar() in COMPOUND_FIRST_CHARS
+
+    /** Public packed key for an onset string — same 25-bit encoding as the table. */
+    @JvmStatic
+    fun onsetKeyOf(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Int =
+        onsetKey(onset, start, length)
+
+    /**
+     * Fold target for [foldKey] on the onset with key [onsetKey]; 0 = none.
+     * Only 'd' → 'đ' exists today (the "đ" onset itself has no fold, which is
+     * what lets the composer untoggle).  Same code shape as [RimeMap] folds.
+     */
+    @JvmStatic
+    fun foldTarget(onsetKey: Int, foldKey: Char): Int {
+        if (foldKey.lowercaseChar() != 'd') return 0
+        val slot = find(onsetKey)
+        return if (slot < 0) 0 else _fold[slot].toInt()
+    }
+
+    /** Apply an onset fold [code] to [onset], preserving casing. */
+    @JvmStatic
+    fun applyFold(onset: String, code: Int): String {
+        if (code == 0) return onset
+        val p = code and 7
+        val idx = (code ushr 3) and 0x1F
+        if (p >= onset.length || idx >= ONSET_AT.size) return onset
+        val buf = onset.toCharArray()
+        val ch = ONSET_AT[idx]
+        buf[p] = if (buf[p].isUpperCase()) ch.uppercaseChar() else ch
+        return String(buf)
+    }
 
     /** Complete valid onset (not just a prefix). */
     fun isCompleteOnset(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean {

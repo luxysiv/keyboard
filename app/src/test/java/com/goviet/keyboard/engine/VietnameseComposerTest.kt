@@ -283,6 +283,25 @@ class VietnameseComposerTest {
     }
 
     @Test
+    fun testOnsetDFoldLivesOnBitmap() {
+        // d→đ is a fold data field on OnsetMap — no if/else onset rule needed.
+        val dKey = OnsetMap.onsetKeyOf("d")
+        assertNotEquals(0, OnsetMap.foldTarget(dKey, 'd'))
+        assertEquals("đ", OnsetMap.applyFold("d", OnsetMap.foldTarget(dKey, 'd')))
+
+        // The folded "đ" itself has no fold target (0) — the composer detects
+        // untoggle instead of double-folding.
+        assertEquals(0, OnsetMap.foldTarget(OnsetMap.onsetKeyOf("đ"), 'd'))
+
+        // Uppercase preserved: Dd -> Đ (fold), Ddas -> Đá (fold + tone).
+        assertEquals("Đ", engine.process("Dd"))
+        assertEquals("Đá", engine.process("Ddas"))
+        assertEquals("Đa", engine.process("Dad"))
+        assertEquals("Dad", engine.process("Dadd"))
+        assertEquals("Đ", engine.process("DD"))
+    }
+
+    @Test
     fun testToneKeysBlockedAfterVowelConsonantRejected() {
         // you/r — o,u are rejected (not valid rimes) → hard lock blocks hook tone 'r'
         assertEquals("your", engine.process("your"))

@@ -204,12 +204,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             out.onset = raw.subSequence(0, onsetEnd).toString()
         }
 
-        // ── Handle consecutive 'd' pattern (d→đ toggle) ───────────
         var pos = onsetEnd
-        if (onsetEnd > 0 && raw[0] == 'd' && pos < len && raw[pos] == 'd') {
-            out.onset = if (raw[0].isUpperCase()) "Đ" else "đ"
-            pos += 1
-        }
 
         // ── Step 2–4: Vowel/fold processing ───────────────────────
         var lastFoldKey = '\u0000'   // fold key that last modified nucleus
@@ -224,32 +219,23 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             val c = raw[pos]
             val cLow = c.lowercaseChar()
 
-            // ── Consecutive 'd' / onset fold → đ ────────────────────
+            // ── Onset fold (d → đ): same data-driven fold/untoggle as nuclei ──
+            // The plain 'd' onset has a fold target on OnsetMap; pressing 'd'
+            // folds d→đ, pressing 'd' again on the folded "đ" untoggles back to
+            // 'd' + a literal 'd' (double-consume), then locks the syllable.
             if ((c == 'd' || c == 'D') && !syllableLocked) {
-                val oLower = out.onset.lowercase()
-                if (oLower.endsWith('d') && out.onset != "Đ") {
-                    // Fold: 'd' onset → 'Đ'
-                    out.onset = if (out.onset[0].isUpperCase()) "Đ" else "đ"
+                val oKey = OnsetMap.onsetKeyOf(out.onset)
+                val dFold = OnsetMap.foldTarget(oKey, 'd')
+                if (dFold != 0) {
+                    out.onset = OnsetMap.applyFold(out.onset, dFold)
                     pos++; continue
                 }
-                if (out.onset == "Đ" || out.onset == "đ") {
-                    // Untoggle: 'Đ' → 'd' + literal 'd'
-                    out.onset = if (raw[0].isUpperCase()) "D" else "d"
+                if (out.onset == "đ" || out.onset == "Đ") {
+                    out.onset = if (out.onset[0].isUpperCase()) "D" else "d"
                     out.rawSuffix += c
                     syllableLocked = true
                     toneLocked = true
                     pos++; continue
-                }
-            }
-
-            // ── Consecutive 'd' untoggle (between vowels/codas) ─────
-            if (!syllableLocked && c == 'd' && pos + 1 < len && raw[pos + 1] == 'd') {
-                if (pos + 2 >= len || isConsonant(raw[pos + 2])) {
-                    out.rawSuffix += "dd"
-                    syllableLocked = true
-                    toneLocked = true
-                    pos += 2
-                    continue
                 }
             }
 
