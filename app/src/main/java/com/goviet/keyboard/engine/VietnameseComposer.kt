@@ -157,10 +157,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var i = from
         while (i < raw.length) {
             val c = raw[i].lowercaseChar()
-            // Check functional keys FIRST — they're not coda chars
-            if (c in FOLD_KEYS || VietnamesePhonology.TONE_KEYS.indexOf(c) >= 0) {
-                i++; continue
-            }
+            // Tone keys mark the end of the current syllable's rime —
+            // nothing after a tone key can be a coda of this syllable.
+            if (VietnamesePhonology.TONE_KEYS.indexOf(c) >= 0) break
+            // Fold keys (e, o, a, w) may be absorbed as part of a compound
+            // fold cycle — skip them while continuing to scan for codas.
+            if (c in FOLD_KEYS) { i++; continue }
             if (isConsonant(c)) { sb.append(c); i++ }
             else break
         }
@@ -456,19 +458,30 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // validates via RimeMap.  Tie-break (both open rimes valid) by onset:
         // the open "uơ" form only exists after the onsets listed in OnsetMap.
         val tail = predictConsonantTail(raw, rawPos + 1)
-        val candCoda = out.coda + tail
         val primNuc = RimeMap.applyFold(nuc, primary)
         val altNuc = RimeMap.applyFold(nuc, alt)
-        val primValid = isValidRime(primNuc, candCoda)
-        val altValid = isValidRime(altNuc, candCoda)
-        val chosen: String? = when {
-            primValid && !altValid -> primNuc
-            altValid && !primValid -> altNuc
-            primValid && altValid -> {
-                val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
-                if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
+
+        // Helper: pick from primNuc/altNuc given a coda, using tie-break rules.
+        fun pickVariant(coda: String): String? {
+            val pv = isValidRime(primNuc, coda)
+            val av = isValidRime(altNuc, coda)
+            return when {
+                pv && !av -> primNuc
+                av && !pv -> altNuc
+                pv && av -> {
+                    val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
+                    if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
+                }
+                else -> null
             }
-            else -> null
+        }
+
+        // Try with the predicted tail first; if both invalid, fall back to
+        // empty tail (the predicted consonant may not be a real coda).
+        val candCoda = out.coda + tail
+        var chosen = pickVariant(candCoda)
+        if (chosen == null && tail.isNotEmpty()) {
+            chosen = pickVariant(out.coda)
         }
         if (chosen == null) return -1
         out.nucleus = chosen
