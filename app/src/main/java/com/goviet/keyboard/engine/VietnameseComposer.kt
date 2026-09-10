@@ -180,6 +180,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (OnsetMap.isValidOnset(raw, 0, onsetLen)) {
                 // Single vowel char at start is NOT a valid onset
                 if (onsetLen == 1 && VietnamesePhonology.isBaseVowel(raw[0])) continue
+                // When directW is OFF, 'w' at syllable start should fold, not onset
+                if (!options.directW && onsetLen == 1 && raw[0].lowercaseChar() == 'w') continue
                 // Compound onsets ending with a vowel (gi, qu) should only win
                 // when a vowel follows in the remaining text — otherwise the
                 // final vowel character should become the nucleus (e.g. 'gif' →
@@ -202,17 +204,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         }
         if (onsetEnd > 0) {
             out.onset = raw.subSequence(0, onsetEnd).toString()
-        }
-
-        // ── Direct w: when directW option is ON, 'w' at syllable start
-        // goes to onset position (not fold to ư) — types literal 'w'.
-        // When OFF (default Telex), 'w' folds vowels normally: u→ư, o→ơ, etc.
-        if (options.directW && onsetEnd == 0 && len >= 1) {
-            val firstLow = raw[0].lowercaseChar()
-            if (firstLow == 'w' || firstLow == 'W') {
-                out.onset = if (raw[0].isUpperCase()) "W" else "w"
-                onsetEnd = 1
-            }
         }
 
         var pos = onsetEnd
