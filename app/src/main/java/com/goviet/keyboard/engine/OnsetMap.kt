@@ -54,6 +54,7 @@ object OnsetMap {
     private lateinit var _keys: IntArray
     private lateinit var _data: ByteArray
     private lateinit var _fold: ByteArray
+    private lateinit var _foldKey: CharArray  // reverse: fold-result slot → fold key
     // bit 0: isComplete, bit 1: isPrefix (of some longer onset),
     // bit 2: allows the OPEN rime "uơ" (huơ, thuở, khuơ, quơ, luơ…)
     //
@@ -68,6 +69,7 @@ object OnsetMap {
         _keys = IntArray(TABLE_SIZE)
         _data = ByteArray(TABLE_SIZE)
         _fold = ByteArray(TABLE_SIZE)
+        _foldKey = CharArray(TABLE_SIZE)
         // Insert all complete onsets (NO prefix entries for single chars
         // like 'q' — those are handled by isPrefixOfCompound).
         for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
@@ -78,7 +80,12 @@ object OnsetMap {
         // Fold target: plain 'd' onset + 'd' → 'đ' (the fold/untoggle cycle is
         // the SAME mechanism as the nucleus folds — data on the map value).
         val dSlot = find(onsetKey("d"))
-        if (dSlot >= 0) _fold[dSlot] = foldCode(0, 'đ').toByte()
+        if (dSlot >= 0) {
+            _fold[dSlot] = foldCode(0, 'đ').toByte()
+            // Record reverse: đ's slot maps back to fold key 'd'
+            val foldedSlot = find(onsetKey("đ"))
+            if (foldedSlot >= 0) _foldKey[foldedSlot] = 'd'
+        }
     }
 
     /** Pack a single-char onset fold replacement (always position 0 today). */
@@ -149,6 +156,29 @@ object OnsetMap {
         val buf = onset.toCharArray()
         val ch = ONSET_AT[idx]
         buf[p] = if (buf[p].isUpperCase()) ch.uppercaseChar() else ch
+        return String(buf)
+    }
+
+    /**
+     * Given an onset that IS a fold result, return the fold key that produced it.
+     * Returns '\u0000' if this onset is not a fold target of any key.
+     */
+    @JvmStatic
+    fun foldKeyForTarget(onsetKey: Int): Char {
+        val slot = find(onsetKey)
+        return if (slot < 0) '\u0000' else _foldKey[slot]
+    }
+
+    /**
+     * Reverse a fold: given a folded onset and the fold key, restore the plain form.
+     * Fold always operates at position 0, so we just restore that char.
+     */
+    @JvmStatic
+    fun unfoldOnset(onset: String, foldKey: Char): String {
+        if (onset.isEmpty()) return onset
+        val buf = onset.toCharArray()
+        val ch = foldKey.lowercaseChar()
+        buf[0] = if (buf[0].isUpperCase()) ch.uppercaseChar() else ch
         return String(buf)
     }
 

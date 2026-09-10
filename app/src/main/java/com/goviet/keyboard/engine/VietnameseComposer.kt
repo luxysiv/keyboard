@@ -204,6 +204,18 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             out.onset = raw.subSequence(0, onsetEnd).toString()
         }
 
+        // ── Direct w: solo 'w' goes to onset, not fold to ư ────────
+        // w is not a Vietnamese vowel — it's a horn modifier (Telex).
+        // Solo w at syllable start occupies the onset position so that
+        // following vowels display in the correct order ("wa" not "aw").
+        if (onsetEnd == 0 && len >= 1) {
+            val firstLow = raw[0].lowercaseChar()
+            if (firstLow == 'w' || firstLow == 'W') {
+                out.onset = if (raw[0].isUpperCase()) "W" else "w"
+                onsetEnd = 1
+            }
+        }
+
         var pos = onsetEnd
 
         // ── Step 2–4: Vowel/fold processing ───────────────────────
@@ -214,27 +226,29 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var syllableLocked = false  // once any char is rejected, the rest of the syllable is literal
         var justUntoggled = false  // true after fold→untoggle, prevents immediate re-fold
         var toneLocked = false  // true after tone key rejected (not cancelled) for invalid rime
+        var wOnsetAbsorbed = false  // true after the first w-absorb after onset 'w' (w+w→w)
 
         while (pos < len) {
             val c = raw[pos]
             val cLow = c.lowercaseChar()
 
-            // ── Onset fold (d → đ): same data-driven fold/untoggle as nuclei ──
-            // The plain 'd' onset has a fold target on OnsetMap; pressing 'd'
-            // folds d→đ, pressing 'd' again on the folded "đ" untoggles back to
-            // 'd' + a literal 'd' (double-consume), then locks the syllable.
-            if ((c == 'd' || c == 'D') && !syllableLocked) {
+            // ── Onset fold: data-driven via OnsetMap (no per-char hardcoding) ──
+            // OnsetMap.foldTarget maps (onset, foldKey) -> replacement; currently
+            // only d→đ exists but the mechanism is generic -- any future onset fold
+            // is just a data row in OnsetMap, no composer change needed.
+            // Untoggle: onset equals the fold result for this key -> revert + literal.
+            if (!syllableLocked && out.onset.isNotEmpty()) {
                 val oKey = OnsetMap.onsetKeyOf(out.onset)
-                val dFold = OnsetMap.foldTarget(oKey, 'd')
-                if (dFold != 0) {
-                    out.onset = OnsetMap.applyFold(out.onset, dFold)
+                val oFold = OnsetMap.foldTarget(oKey, cLow)
+                if (oFold != 0) {
+                    out.onset = OnsetMap.applyFold(out.onset, oFold)
                     pos++; continue
                 }
-                if (out.onset == "đ" || out.onset == "Đ") {
-                    out.onset = if (out.onset[0].isUpperCase()) "D" else "d"
+                val ufKey = OnsetMap.foldKeyForTarget(oKey)
+                if (ufKey != '\u0000' && cLow == ufKey) {
+                    out.onset = OnsetMap.unfoldOnset(out.onset, ufKey)
                     out.rawSuffix += c
-                    syllableLocked = true
-                    toneLocked = true
+                    syllableLocked = true; toneLocked = true
                     pos++; continue
                 }
             }
@@ -289,11 +303,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     lastFoldKey = '\u0000'
                     pos++; continue
                 }
-                // Solo 'w' on empty nucleus → ư
-                if (!syllableLocked && cLow == 'w' && out.nucleus.isEmpty()) {
-                    val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
-                    out.nucleus = wChar.toString()
-                    lastFoldKey = 'w'; lastFoldNucIdx = 0; lastFoldRawPos = pos
+                // Absorb: second 'w' after onset 'w' → discard (w+w → w)
+                if (cLow == 'w' && !syllableLocked &&
+                    !wOnsetAbsorbed && out.nucleus.isEmpty() &&
+                    out.onset.isNotEmpty() && out.onset[0].lowercaseChar() == 'w') {
+                    wOnsetAbsorbed = true
                     pos++; continue
                 }
                 // Vowel modifier: try fold rules
