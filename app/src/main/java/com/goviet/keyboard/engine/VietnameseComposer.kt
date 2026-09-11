@@ -161,6 +161,24 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return if (tailStart >= 0) raw.subSequence(tailStart, tailEnd).toString() else ""
     }
 
+    /**
+     * Collect vowels immediately after [from] that would extend the nucleus
+     * (plain vowels a/e/i/o/u/y + horned â/ô/ơ/ư). Used by the dual-variant
+     * w-fold to validate the fold result against the nucleus extension that
+     * will follow, so the correct variant is chosen even when both are valid
+     * standalone.
+     */
+    private fun predictVowelTail(raw: CharSequence, from: Int): String {
+        val sb = StringBuilder()
+        var i = from
+        while (i < raw.length) {
+            val c = raw[i].lowercaseChar()
+            if (VietnamesePhonology.isBaseVowel(c)) { sb.append(c); i++ }
+            else break
+        }
+        return sb.toString()
+    }
+
     private fun isFoldKey(c: Char): Boolean = VietnamesePhonology.isFoldKey(c)
 
     private fun resegment(raw: CharSequence, out: SyllableState) {
@@ -474,6 +492,19 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++
         }
 
+        // Prefix-freeze: revert to raw literal when display + rawSuffix
+        // is not a valid corpus prefix and rawSuffix contains consonants.
+        // Prevents foreign words (banana, manager, software) from garbling.
+        if (out.rawSuffix.length > 1 && hasConsonantInSuffix(out.rawSuffix)) {
+            val display = buildString {
+                append(out.onset); append(out.nucleus); append(out.coda); append(out.rawSuffix)
+            }
+            if (!TokenValidMap.isDisplayPrefixValid(display)) {
+                out.reset()
+                out.rawSuffix = raw.toString()
+            }
+        }
+
     }
 
     /** Primary fold code for [foldKey] on the nucleus slot obtained via [RimeMap.foldSlot]; 0 = none. */
@@ -530,8 +561,28 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 pv && !av -> primNuc
                 av && !pv -> altNuc
                 pv && av -> {
-                    val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
-                    if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
+                    // Both valid standalone — use vowel extension to break tie.
+                    // The correct fold is the one whose compound + following
+                    // vowels forms a valid nucleus prefix (e.g. "Ươ"+"i"="ƯƠI"
+                    // valid vs "uơ"+"i"="uơi" invalid).
+                    val vt = predictVowelTail(raw, rawPos + 1)
+                    if (vt.isNotEmpty()) {
+                        val primExt = primNuc + vt
+                        val altExt = altNuc + vt
+                        val pe = RimeMap.isValidPrefix(RimeMap.keyCat(primExt, primExt.length, out.coda, out.coda.length))
+                        val ae = RimeMap.isValidPrefix(RimeMap.keyCat(altExt, altExt.length, out.coda, out.coda.length))
+                        when {
+                            pe && !ae -> primNuc
+                            ae && !pe -> altNuc
+                            else -> {
+                                val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
+                                if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
+                            }
+                        }
+                    } else {
+                        val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
+                        if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
+                    }
                 }
                 else -> null
             }
@@ -551,6 +602,21 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     private fun isValidRime(nucleus: String, coda: String): Boolean {
         return RimeMap.isValidPrefix(RimeMap.keyCat(nucleus, nucleus.length, coda, coda.length))
+    }
+
+    /**
+     * Check if rawSuffix contains a consonant that is NOT a fold/tone key.
+     * Fold keys (e/o/a/w/d) and tone keys (s/f/r/x/j/z) can appear in
+     * rawSuffix from untoggle/cancel without indicating foreign text.
+     * Only genuine consonants (b/c/ch/g/h/k/l/m/n/ng/nh/p/t/th/tr/v)
+     * in rawSuffix indicate the text is likely foreign → trigger prefix-freeze.
+     */
+    private fun hasConsonantInSuffix(suffix: String): Boolean {
+        for (i in suffix.indices) {
+            val c = suffix[i].lowercaseChar()
+            if (isConsonant(c) && !isToneKey(c) && !isFoldKey(c) && c != 'd') return true
+        }
+        return false
     }
 
     private fun replaceAt(str: String, idx: Int, replacement: Char): String {
@@ -732,9 +798,28 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         while (remIdx < remainingAfterOnset.length && VietnamesePhonology.isBaseVowel(remainingAfterOnset[remIdx])) {
             nucleusSb.append(remainingAfterOnset[remIdx]); remIdx++
         }
-        val nucleus = nucleusSb.toString()
-        val remainingAfterNucleus = remainingAfterOnset.substring(remIdx)
-        val remLower = remainingAfterNucleus.lowercase()
+        var nucleus = nucleusSb.toString()
+        var remainingAfterNucleus = remainingAfterOnset.substring(remIdx)
+        var remLower = remainingAfterNucleus.lowercase()
+
+        // If onset is "gi" but nucleus is empty, shrink to "g" so "i" becomes
+        // the nucleus — mirrors the resegment logic that skips "gi" onset
+        // when no vowel follows.  This fixes "gì/gí/gĩ/gỉ/gị" round-trip.
+        if (nucleus.isEmpty() && onset.length > 1 && onset.last().lowercaseChar() == 'i') {
+            val shorterOnset = baseWord.substring(0, onset.length - 1)
+            if (OnsetMap.isCompleteOnset(shorterOnset.lowercase(), 0, shorterOnset.length)) {
+                onset = shorterOnset
+                remainingAfterOnset = baseWord.substring(onset.length)
+                val nsb = StringBuilder()
+                var ri = 0
+                while (ri < remainingAfterOnset.length && VietnamesePhonology.isBaseVowel(remainingAfterOnset[ri])) {
+                    nsb.append(remainingAfterOnset[ri]); ri++
+                }
+                nucleus = nsb.toString()
+                remainingAfterNucleus = remainingAfterOnset.substring(ri)
+                remLower = remainingAfterNucleus.lowercase()
+            }
+        }
 
         var coda = ""
         var rawSuffix = ""
