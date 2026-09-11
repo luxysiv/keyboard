@@ -259,6 +259,18 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                             out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++; continue
                         }
                     }
+                    // z (clear-tone) with no existing tone → literal z, not consumed.
+                    if (targetTone == Tone.NONE && out.tone == Tone.NONE) {
+                        out.rawSuffix += c; syllableLocked = true; toneLocked = true
+                        pos++; continue
+                    }
+                    // z with existing tone → clear it.  Do NOT lock syllable or
+                    // tone so the user can immediately re-apply a different tone.
+                    if (targetTone == Tone.NONE && out.tone != Tone.NONE) {
+                        out.tone = Tone.NONE
+                        lastToneKey = '\u0000'
+                        pos++; continue
+                    }
                     if (lastToneKey != '\u0000' && cLow == lastToneKey) {
                         if (out.tone != Tone.NONE) {
                             out.tone = Tone.NONE
