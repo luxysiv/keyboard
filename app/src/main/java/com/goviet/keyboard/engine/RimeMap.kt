@@ -117,8 +117,8 @@ object RimeMap {
     private lateinit var _foldW: IntArray    // per-nucleus w alt variant + flags
 
     // Vowel combination map: (nucleus, char) → combined nucleus
-    // Small flatmap for the 4 valid Vietnamese vowel combinations:
-    // ư+o→ươ, ư+a→ưa, uơ+i→ươi, uơ+u→ươu
+    // Flatmap for vowel combinations: n1 + typed-vowel → compound nucleus.
+    // Auto-derived from NUCLEI raw→display at build() time.
     private const val COMB_BITS = 4
     private const val COMB_SIZE = 1 shl COMB_BITS
     private const val COMB_MASK = COMB_SIZE - 1
@@ -156,6 +156,32 @@ object RimeMap {
     /** Initialize the flat map.  Called once at class load time. */
     init { build() }
 
+    /** Canonical raw keystroke for nuclei where naive char-by-char is wrong.
+     *  (w-compound: the w serves double duty — u+w→ư, then the following
+     *   vowel folds via the combination path, not its own 'w'.) */
+    private fun rawOverride(nuc: String): String? = when (nuc) {
+        "ươ" -> "uwo"; "ươi" -> "uowi"; "ươu" -> "uowu"; else -> null
+    }
+
+    /** Canonical Telex raw keystroke for a display nucleus.
+     *  For single vowels + simple compounds, char-by-char via the vowel→raw table.
+     *  For w-compounds with double-duty 'w' (computed by Telex combination path),
+     *  explicit override from [rawOverride].  Case-insensitive: caller handles case. */
+    @JvmStatic
+    fun rawKeyForNucleus(nuc: String): String {
+        val n = nuc.lowercase()
+        rawOverride(n)?.let { return it }
+        val sb = StringBuilder()
+        for (c in n) sb.append(
+            when (c) {
+                'ă' -> "aw"; 'â' -> "aa"; 'ê' -> "ee"
+                'ô' -> "oo"; 'ơ' -> "ow"; 'ư' -> "uw"
+                else -> c
+            }
+        )
+        return sb.toString()
+    }
+
     private fun build() {
         _keys = IntArray(TABLE_SIZE)
         _data = ByteArray(TABLE_SIZE)
@@ -166,10 +192,7 @@ object RimeMap {
         _combineKeys = IntArray(COMB_SIZE)
         _combineVals = arrayOf("", "", "", "", "", "", "", "",
                                "", "", "", "", "", "", "", "")
-        combineInsert("ư", 'o', "ươ")
-        combineInsert("ư", 'a', "ưa")
-        combineInsert("uơ", 'i', "ươi")
-        combineInsert("uơ", 'u', "ươu")
+
 
         // ── Nuclei and their valid codas (from phonology table) ────
         //
@@ -291,6 +314,30 @@ object RimeMap {
             for (len in 1 until r.length) {
                 val pk = rimeKey(r, 0, len)
                 tableInsertIfAbsent(pk, packData(1, 0, 0, 0, 0))
+            }
+        }
+
+        // ── Vowel combination map (derived from raw→display of NUCLEI) ──
+        //
+        // For each nucleus N and each base vowel V, compute the raw keystroke
+        // for N+V; if it maps to a DIFFERENT display nucleus, that's a valid
+        // vowel combination (e.g. ư + raw('o') → raw("uw"+"o") = "uwo" → "ươ").
+        // All lookup is O(1) via the rawToDisplay flatmap — no hardcoded pairs.
+        val rawToDisplay = HashMap<String, String>(NUCLEI.size * 2)
+        for (spec in NUCLEI) rawToDisplay[rawKeyForNucleus(spec.nucleus)] = spec.nucleus
+        // Overrides win over any naive collisions (uơi/ươi share raw "uowi").
+        for (spec in NUCLEI) {
+            val override = rawOverride(spec.nucleus.lowercase())
+            if (override != null) rawToDisplay[override] = spec.nucleus
+        }
+        val plainVowels = charArrayOf('a', 'e', 'i', 'o', 'u')
+        for (spec in NUCLEI) {
+            val baseRaw = rawKeyForNucleus(spec.nucleus)
+            for (v in plainVowels) {
+                val combined = rawToDisplay[baseRaw + v] ?: continue
+                // Skip no-op entries: plain extend already handles nucleus+v
+                if (combined == spec.nucleus + v) continue
+                combineInsert(spec.nucleus, v, combined)
             }
         }
     }

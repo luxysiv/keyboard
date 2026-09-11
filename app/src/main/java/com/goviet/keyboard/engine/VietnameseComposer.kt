@@ -807,45 +807,16 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         @JvmStatic
         fun isVowelModifierKey(c: Char): Boolean = VietnamesePhonology.isFoldKey(c)
 
-        private val NUCLEUS_RAW = arrayOf(
-            "ươ" to "uwo", "ưa" to "uwa", "uơ" to "uow"
-        ).toMap()
-
-        private val CHAR_RAW = IntArray(512).also { a ->
-            fun p(c: Char, r0: Char, r1: Char) { a[c.code] = (r0.code shl 8) or r1.code }
-            p('â', 'a', 'a'); p('Ă', 'A', 'w'); p('ă', 'a', 'w'); p('Â', 'A', 'a')
-            p('ê', 'e', 'e'); p('Ê', 'E', 'e')
-            p('ô', 'o', 'o'); p('Ô', 'O', 'o')
-            p('ơ', 'o', 'w'); p('Ơ', 'O', 'w')
-            p('ư', 'u', 'w'); p('Ư', 'U', 'w')
-        }
-
         fun nucleusToRawKeystroke(nucleus: String): String {
             if (nucleus.isEmpty()) return ""
-            val nucLower = nucleus.lowercase()
-            val raw = NUCLEUS_RAW[nucLower]
-            if (raw != null) {
-                val allUpper = nucleus.all { it.isUpperCase() }
-                val firstUpper = nucleus[0].isUpperCase()
-                return when {
-                    allUpper -> raw.uppercase()
-                    firstUpper -> raw.replaceFirstChar { it.uppercase() }
-                    else -> raw
-                }
+            val raw = RimeMap.rawKeyForNucleus(nucleus)
+            val allUpper = nucleus.all { it.isUpperCase() }
+            val firstUpper = nucleus.isNotEmpty() && nucleus[0].isUpperCase()
+            return when {
+                allUpper -> raw.uppercase()
+                firstUpper -> raw.replaceFirstChar { it.uppercase() }
+                else -> raw
             }
-            val sb = StringBuilder()
-            for (c in nucleus) {
-                val packed = CHAR_RAW[c.code]
-                if (packed != 0) {
-                    val r0 = (packed ushr 8).toChar()
-                    val r1 = (packed and 0xFF).toChar()
-                    sb.append(if (c.isUpperCase()) r0.uppercaseChar() else r0)
-                    sb.append(r1)
-                } else {
-                    sb.append(c)
-                }
-            }
-            return sb.toString()
         }
     }
 
