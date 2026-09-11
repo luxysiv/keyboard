@@ -55,6 +55,7 @@ object OnsetMap {
     private lateinit var _data: ByteArray
     private lateinit var _fold: ByteArray
     private lateinit var _foldKey: CharArray  // reverse: fold-result slot → fold key
+    private lateinit var _foldKeySet: BooleanArray  // fast pre-check: chars that have fold data
     // Data byte layout (only bits 0 and 2 are currently used):
     //   bit 0: isComplete — every stored entry is a complete onset; prefix
     //          detection for composition is handled by isPrefixOfCompound
@@ -72,6 +73,7 @@ object OnsetMap {
         _data = ByteArray(TABLE_SIZE)
         _fold = ByteArray(TABLE_SIZE)
         _foldKey = CharArray(TABLE_SIZE)
+        _foldKeySet = BooleanArray(512)
         // Insert all complete onsets (NO prefix entries for single chars
         // like 'q' — those are handled by isPrefixOfCompound).
         for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
@@ -87,7 +89,20 @@ object OnsetMap {
             // Record reverse: đ's slot maps back to fold key 'd'
             val foldedSlot = find(onsetKey("đ"))
             if (foldedSlot >= 0) _foldKey[foldedSlot] = 'd'
+            // Data-driven: 'd' is the only onset fold key today.
+            _foldKeySet['d'.code] = true
         }
+    }
+
+    /**
+     * True when [c] is a fold key that actually has a target in the table.
+     * Built from the fold data itself; the composer uses it to skip the two
+     * onset fold probes for unrelated keys (most typed characters).
+     */
+    @JvmStatic
+    fun isRegisteredFoldKey(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until _foldKeySet.size && _foldKeySet[code]
     }
 
     /** Pack a single-char onset fold replacement (always position 0 today). */

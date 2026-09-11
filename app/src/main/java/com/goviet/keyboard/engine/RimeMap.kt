@@ -428,6 +428,21 @@ object RimeMap {
     }
 
     /**
+     * Single-lookup check whether [key] is a valid prefix AND accepts [tone]:
+     * combines [isValidPrefix] + [isToneAllowed] into one table probe for the
+     * hot coda-building path.
+     */
+    @JvmStatic
+    fun isValidPrefixWithTone(key: Int, tone: Int): Boolean {
+        val i = find(key)
+        if (i < 0) return false
+        val d = _data[i].toInt()
+        if (tone == 0) return true
+        if ((d and 4) == 0) return true
+        return tone == 1 || tone == 5
+    }
+
+    /**
      * Compute the key for an extended rime (existing rime + one new char)
      * without re-encoding the whole string.  O(1).
      */
@@ -580,41 +595,43 @@ object RimeMap {
         return n.contains("ươ") || n.contains("uơ") || n.contains("ưa") || n.contains("oă")
     }
 
-    /** Primary fold code for [foldKey] on the nucleus with key [nucleusKey]; 0 = none. */
+    /**
+     * Slot for [nucleusKey], or -1 when absent.  All fold data for a nucleus is
+     * read through this single lookup — the accessors below only unpack the
+     * already-found slot, so one key never triggers more than one table probe.
+     */
     @JvmStatic
-    fun foldPrimary(nucleusKey: Int, foldKey: Char): Int {
-        val slot = find(nucleusKey)
-        if (slot < 0) return 0
-        val f = _fold[slot]
-        return when (foldKey.lowercaseChar()) {
-            'e' -> (f and 0xFFFF).toInt()
-            'o' -> ((f ushr 16) and 0xFFFF).toInt()
-            'a' -> ((f ushr 32) and 0xFFFF).toInt()
-            'w' -> ((f ushr 48) and 0xFFFF).toInt()
-            else -> 0
-        }
-    }
+    fun foldSlot(nucleusKey: Int): Int = find(nucleusKey)
 
-    /** Alt fold code for the 'w' fold (dual-variant uo/uô); 0 = none. */
+    /** 'e' fold code for a slot from [foldSlot]; 0 = none. */
     @JvmStatic
-    fun foldAlt(nucleusKey: Int): Int {
-        val slot = find(nucleusKey)
-        return if (slot < 0) 0 else _foldW[slot] and 0xFFFF
-    }
+    fun foldE(slot: Int): Int = if (slot < 0) 0 else (_fold[slot] and 0xFFFF).toInt()
 
-    /** True when the primary fold for [nucleusKey] should validate with lookahead. */
+    /** 'o' fold code for a slot from [foldSlot]; 0 = none. */
     @JvmStatic
-    fun foldPrimaryLookahead(nucleusKey: Int): Boolean {
-        val slot = find(nucleusKey)
-        return slot >= 0 && (_foldW[slot] and (1 shl 16)) != 0
-    }
+    fun foldO(slot: Int): Int = if (slot < 0) 0 else ((_fold[slot] ushr 16) and 0xFFFF).toInt()
 
-    /** True when the nucleus itself is a w-compound display form. */
+    /** 'a' fold code for a slot from [foldSlot]; 0 = none. */
     @JvmStatic
-    fun isWCompoundForm(nucleusKey: Int): Boolean {
-        val slot = find(nucleusKey)
-        return slot >= 0 && (_foldW[slot] and (1 shl 30)) != 0
-    }
+    fun foldA(slot: Int): Int = if (slot < 0) 0 else ((_fold[slot] ushr 32) and 0xFFFF).toInt()
+
+    /** 'w' primary fold code for a slot from [foldSlot]; 0 = none. */
+    @JvmStatic
+    fun foldWPrimary(slot: Int): Int = if (slot < 0) 0 else ((_fold[slot] ushr 48) and 0xFFFF).toInt()
+
+    /** 'w' alt fold code (dual-variant uo/uô) for a slot; 0 = none. */
+    @JvmStatic
+    fun foldWAlt(slot: Int): Int = if (slot < 0) 0 else _foldW[slot] and 0xFFFF
+
+    /** True when the primary 'w' fold for [slot] must validate with lookahead. */
+    @JvmStatic
+    fun foldWPrimaryLookahead(slot: Int): Boolean =
+        slot >= 0 && (_foldW[slot] and (1 shl 16)) != 0
+
+    /** True when the nucleus at [slot] is a w-compound display form. */
+    @JvmStatic
+    fun isWCompound(slot: Int): Boolean =
+        slot >= 0 && (_foldW[slot] and (1 shl 30)) != 0
 
     /** Position where the fold lands (untoggle anchor). */
     @JvmStatic
