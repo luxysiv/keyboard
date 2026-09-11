@@ -492,16 +492,29 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++
         }
 
-        // Prefix-freeze: revert to raw literal when display + rawSuffix
-        // is not a valid corpus prefix and rawSuffix contains consonants.
-        // Prevents foreign words (banana, manager, software) from garbling.
+        // Prefix-freeze: revert to raw literal when the rime (nucleus+coda+
+        // rawSuffix) is not a valid corpus prefix and rawSuffix contains
+        // consonants.  Two modes:
+        //  - If the raw has NO space/boundary before the invalid part
+        //    (foreign word being typed): reset to raw to prevent garbling.
+        //  - If there IS a space (valid syllable followed by junk):
+        //    just lock the syllable — do NOT destroy already-valid output.
         if (out.rawSuffix.length > 1 && hasConsonantInSuffix(out.rawSuffix)) {
-            val display = buildString {
-                append(out.onset); append(out.nucleus); append(out.coda); append(out.rawSuffix)
+            val rimeDisplay = buildString {
+                append(out.nucleus); append(out.coda); append(out.rawSuffix)
             }
-            if (!TokenValidMap.isDisplayPrefixValid(display)) {
-                out.reset()
-                out.rawSuffix = raw.toString()
+            if (!TokenValidMap.isDisplayPrefixValid(rimeDisplay)) {
+                // If the rawSuffix itself contains a space, the valid part
+                // (onset+nucleus+coda) was derived before that space — preserve it.
+                val hasSpaceBefore = out.rawSuffix.contains(' ')
+                if (!hasSpaceBefore) {
+                    // Foreign word: reset to raw to prevent garbling
+                    out.reset()
+                    out.rawSuffix = raw.toString()
+                } else {
+                    // Valid syllable + trailing junk: lock, don't destroy
+                    syllableLocked = true; toneLocked = true
+                }
             }
         }
 
