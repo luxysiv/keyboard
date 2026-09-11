@@ -219,10 +219,10 @@ object RimeMap {
         val C_O5    = arrayOf("p","t","m","n")                    // ơ (no c, no ng)
         val C_U8    = arrayOf("c","m","n","ng","t")               // ư (no p)
         val C_Y     = arrayOf("p","t","ch","n","nh")              // y
-        val C_OE    = arrayOf("m","n","t")                        // oe
-        val C_OA5   = arrayOf("c","m","n","ng","t")               // oă (no p)
-        val C_UE    = arrayOf("ch","nh")                          // ue, uê
-        val C_UA4   = arrayOf("n","ng","t")                       // uâ
+        val C_OE    = arrayOf("m","n","p","t")                        // oe
+        val C_OA5   = arrayOf("c","m","n","ng","p","t")               // oă (no p)
+        val C_UE    = arrayOf("ch","n","nh","t")                          // ue, uê
+        val C_UA4   = arrayOf("c","n","ng","t")                       // uâ
         val C_UY2   = arrayOf("p","t","ch","n","nh")              // uy
         val C_OO    = arrayOf("c","ng")                           // oo (coong, xoóc)
         val C_UYE   = arrayOf("n","t")                            // uye/uyê
