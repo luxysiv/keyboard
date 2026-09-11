@@ -145,7 +145,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var tailEnd = -1
         while (i < raw.length) {
             val c = raw[i].lowercaseChar()
-            if (isToneKey(c)) break
+            // Skip tone keys when predicting coda: in Telex the tone letter
+            // (s/f/r/x/j/z) precedes the coda consonants in the raw stream
+            // (e.g. "thuowrng" → tone r before coda ng).  Without this skip
+            // the lookahead stops at the tone key and misses the coda, causing
+            // w-fold to pick the open form "uơ" instead of the closed "ươ".
+            if (isToneKey(c)) { i++; continue }
             if (isFoldKey(c)) { i++; continue }
             if (isConsonant(c)) {
                 if (tailStart < 0) tailStart = i
