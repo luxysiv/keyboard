@@ -208,29 +208,55 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return sb.toString()
     }
 
+    /**
+     * Pipeline entry — single source of truth for syllable composition.
+     *
+     * Phase 1 [matchOnset] consumes the longest valid consonant prefix.
+     * Phase 2 [scanBody] walks the remaining raw keys left-to-right, dispatching
+     * each character to the appropriate handler (tone / modifier / vowel /
+     * coda) and applying folds from the map data.  Phase 3 renders [SyllableState]
+     * to display text (see [SyllableState.toDisplayString]).
+     *
+     * No incremental mutation survives between keystrokes: the controller appends
+     * to the raw buffer and calls resegment again, so every state is derived.
+     */
     private fun resegment(raw: CharSequence, out: SyllableState) {
         out.reset()
-        val len = raw.length
-        if (len == 0) return
+        if (raw.isEmpty()) return
+        matchOnset(raw, out)
+        scanBody(raw, out, ScanCtx(if (out.onset.isEmpty()) 0 else OnsetMap.onsetKeyOf(out.onset)))
+    }
 
-        // ── Step 1: Onset (longest valid consonant prefix) ───────
-        // Single vowels (a, e, i, o, u, y, etc.) are NOT onsets — only consonants.
+    /** Per-call scan memory — replaces the 10 loose local flags of the old loop. */
+    private class ScanCtx(
+        var oKey: Int,
+        var nucKey: Int = 0,
+        var rimeKey: Int = 0,
+        var lastFoldKey: Char = '\u0000',   // fold key that last modified nucleus
+        var lastFoldNucIdx: Int = -1,        // nucleus index where fold was applied
+        var lastToneKey: Char = '\u0000',
+        var syllableLocked: Boolean = false, // once a char is rejected the rest is literal
+        var justUntoggled: Boolean = false,  // prevents immediate re-fold after untoggle
+        var toneLocked: Boolean = false,     // tone rejected for invalid rime (not cancelling)
+        var wOnsetAbsorbed: Boolean = false, // w+w after onset w was discarded
+        var standaloneWFold: Boolean = false // standalone w created ư from nothing
+    )
+
+    /**
+     * Phase 1 — longest valid onset prefix.  Single vowels are never onsets; with
+     * directW off a leading 'w' folds instead; "gi" only wins as an onset when a
+     * vowel follows (otherwise its 'i' becomes the nucleus: gif → g + i + f).
+     */
+    private fun matchOnset(raw: CharSequence, out: SyllableState) {
+        val len = raw.length
         val maxOnset = minOf(3, len)
         var onsetEnd = 0
         for (onsetLen in maxOnset downTo 1) {
             if (OnsetMap.isValidOnset(raw, 0, onsetLen)) {
-                // Single vowel char at start is NOT a valid onset
                 if (onsetLen == 1 && RimeMap.isBaseVowel(raw[0])) continue
-                // When directW is OFF, 'w' at syllable start should fold, not onset
                 if (!options.directW && onsetLen == 1 && raw[0].lowercaseChar() == 'w') continue
-                // Compound onsets ending with a vowel (gi, qu) should only win
-                // when a vowel follows in the remaining text — otherwise the
-                // final vowel character should become the nucleus (e.g. 'gif' →
-                // onset 'g' + nucleus 'i' + tone, not onset 'gi' + literal 'f').
                 if (onsetLen > 1) {
-                    // Only "gi" (ending in 'i') is ambiguous: its 'i' can serve
-                    // as the nucleus. "qu" must never shrink — there is no
-                    // standalone 'q' onset in Vietnamese.
+                    // Only "gi" (ending in 'i') is ambiguous — there is no standalone 'q' onset.
                     if (raw[onsetLen - 1].lowercaseChar() == 'i') {
                         var vowelAfter = false
                         for (k in onsetLen until len) {
@@ -243,331 +269,317 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 break
             }
         }
-        if (onsetEnd > 0) {
-            out.onset = raw.subSequence(0, onsetEnd).toString()
-        }
+        if (onsetEnd > 0) out.onset = raw.subSequence(0, onsetEnd).toString()
+    }
 
-        var pos = onsetEnd
-
-        // ── Incremental key caches ─────────────────────────────────
-        // Packed flat-map keys of onset / nucleus / rime, kept in sync with every
-        // mutation.  Appending one char extends the key in O(1) instead of
-        // re-encoding the whole substring; keys are recomputed only when the
-        // nucleus or onset is replaced (fold, untoggle, vowel combination,
-        // deferred fold).  Each keystroke therefore stays at a single table
-        // probe on the hot path and never re-encodes the nucleus.
-        var oKey = if (onsetEnd > 0) OnsetMap.onsetKeyOf(out.onset) else 0
-        var nucKey = 0
-        var rimeKey = 0
-
-        // ── Main loop: tone, fold, vowel & coda processing ──────────
-        var lastFoldKey = '\u0000'   // fold key that last modified nucleus
-        var lastFoldNucIdx = -1        // nucleus index where fold was applied
-        var lastToneKey = '\u0000'
-        var syllableLocked = false  // once any char is rejected, the rest of the syllable is literal
-        var justUntoggled = false  // true after fold→untoggle, prevents immediate re-fold
-        var toneLocked = false  // true after tone key rejected (not cancelled) for invalid rime
-        var wOnsetAbsorbed = false  // true after the first w-absorb after onset 'w' (w+w→w)
-        var standaloneWFold = false  // true when standalone 'w' creates ư from nothing (no prior nucleus)
-
+    /**
+     * Phase 2 — walk the body keys, dispatching by category.  Each handler owns
+     * exactly one branch of the old loop; `ScanCtx` carries the scan memory.
+     */
+    private fun scanBody(raw: CharSequence, out: SyllableState, ctx: ScanCtx) {
+        var pos = matchLen(out)
+        val len = raw.length
         while (pos < len) {
             val c = raw[pos]
             val cLow = c.lowercaseChar()
 
-            // ── Onset fold: data-driven via OnsetMap (no per-char hardcoding) ──
-            // OnsetMap.foldTarget maps (onset, foldKey) -> replacement; currently
-            // only d→đ exists but the mechanism is generic -- any future onset fold
-            // is just a data row in OnsetMap, no composer change needed.
-            // Untoggle: onset equals the fold result for this key -> revert + literal.
-            if (!syllableLocked && out.onset.isNotEmpty() &&
-                OnsetMap.isRegisteredFoldKey(cLow)) {
-                val oFold = OnsetMap.foldTarget(oKey, cLow)
-                if (oFold != 0) {
-                    out.onset = OnsetMap.applyFold(out.onset, oFold)
-                    oKey = OnsetMap.onsetKeyOf(out.onset)
-                    pos++; continue
-                }
-                val ufKey = OnsetMap.foldKeyForTarget(oKey)
-                if (ufKey != '\u0000' && cLow == ufKey) {
-                    out.onset = OnsetMap.unfoldOnset(out.onset, ufKey)
-                    oKey = OnsetMap.onsetKeyOf(out.onset)
-                    out.rawSuffix += c
-                    syllableLocked = true; toneLocked = true
-                    pos++; continue
-                }
-            }
+            // 1. Onset fold (d→đ, data-driven via OnsetMap) + untoggle.
+            if (tryOnsetFold(c, cLow, out, ctx)) { pos++; continue }
 
-            // ── Tone handling ──────────────────────────────────────
-            if (isToneKey(cLow)) {
-                if (toneLocked) { out.rawSuffix += c; syllableLocked = true; pos++; continue }
-                val targetTone = Tone.fromKey(cLow)
-                if (targetTone != null && out.nucleus.isNotEmpty()) {
-                    if (out.nucleus.length >= 2) {
-                        val n0 = out.nucleus[0].lowercaseChar()
-                        val n1 = out.nucleus[1].lowercaseChar()
-                        if ((n0 == 'a' && n1 == 'a') || (n0 == 'e' && n1 == 'e')) {
-                            out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++; continue
-                        }
-                    }
-                    // z (clear-tone) with no existing tone → literal z, not consumed.
-                    if (targetTone == Tone.NONE && out.tone == Tone.NONE) {
-                        out.rawSuffix += c; syllableLocked = true; toneLocked = true
-                        pos++; continue
-                    }
-                    // z with existing tone → clear it.  Do NOT lock syllable or
-                    // tone so the user can immediately re-apply a different tone.
-                    if (targetTone == Tone.NONE && out.tone != Tone.NONE) {
-                        out.tone = Tone.NONE
-                        lastToneKey = '\u0000'
-                        pos++; continue
-                    }
-                    if (lastToneKey != '\u0000' && cLow == lastToneKey) {
-                        if (out.tone != Tone.NONE) {
-                            out.tone = Tone.NONE
-                            out.rawSuffix += c
-                            lastToneKey = '\u0000'
-                        } else {
-                            out.rawSuffix += c
-                        }
-                        toneLocked = true
-                        syllableLocked = true
-                        pos++; continue
-                    }
-                    val rk = rimeKey
-                    if (RimeMap.isRimeHashValidForTone(rk.toLong(), targetTone)) {
-                        out.tone = targetTone
-                        lastToneKey = cLow
-                        toneLocked = false
-                    } else {
-                        out.rawSuffix += c
-                        toneLocked = true
-                        syllableLocked = true
-                    }
-                    pos++; continue
-                }
-                out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++; continue
-            }
-
-            // ── Vowel modifier / vowel / consonant ─────────────────
-            if (cLow == 'e' || cLow == 'o' || cLow == 'a' || cLow == 'w') {
-                // 'w' after a uo-family w-compound (uơ/ươ): the map says the fold
-                // cannot untoggle, so the repeated key either becomes literal text
-                // when it sits right after the fold key (uoww → uơw) or is
-                // absorbed when the compound was rebuilt through other keys
-                // (uwow → ươ).  The ua/oa-family compounds (ưa/oă) carry no such
-                // flag and untoggle normally (huawwei → huawei).
-                if (cLow == 'w' && !syllableLocked && lastFoldKey == 'w' &&
-                    out.nucleus.isNotEmpty() &&
-                    RimeMap.foldWRepeatLiteral(RimeMap.foldSlot(nucKey))) {
-                    if (pos > 0 && raw[pos - 1].lowercaseChar() == 'w') {
-                        out.rawSuffix += c
-                        syllableLocked = true; toneLocked = true
-                    }
-                    lastFoldKey = '\u0000'
-                    pos++; continue
-                }
-                // Absorb: second 'w' after onset 'w' → discard (w+w → w)
-                // Only when directW=OFF: w is a fold key here. With directW=ON,
-                // w is a literal onset consonant, so second w is also literal.
-                if (!options.directW && cLow == 'w' && !syllableLocked &&
-                    !wOnsetAbsorbed && out.nucleus.isEmpty() &&
-                    out.onset.isNotEmpty() && out.onset[0].lowercaseChar() == 'w') {
-                    wOnsetAbsorbed = true
-                    pos++; continue
-                }
-                // w → ư when there is no nucleus yet (standalone "w" or after a
-                // consonant onset: sw→sư, dw→dư, lw→lư).  Onset 'w' is excluded —
-                // its repeated w is absorbed by the branch above.  The ư was created
-                // from nothing, so another 'w' cancels it back to raw "tw".
-                // The fold is accepted only when the onset+ư combo lives in the
-                // valid-syllable prefix map — qu+ư does not (quw stays literal quw).
-                if (!options.directW && cLow == 'w' && !syllableLocked &&
-                    out.nucleus.isEmpty() &&
-                    (out.onset.isEmpty() || out.onset[0].lowercaseChar() != 'w')) {
-                    val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
-                    val comboOk = out.onset.isEmpty() ||
-                        RimeMap.isSyllableDisplayPrefixValid((out.onset + wChar).lowercase())
-                    if (comboOk) {
-                        out.nucleus = wChar.toString()
-                        nucKey = RimeMap.rimeKey(out.nucleus)
-                        rimeKey = nucKey
-                        lastFoldKey = 'w'; lastFoldNucIdx = 0
-                        standaloneWFold = true
-                        pos++; continue
-                    }
-                }
-
-                // Vowel modifier: untoggle FIRST, then fold rules.
-                // Per A7: pressing the same fold key again on the same position
-                // untoggles and releases the key as literal. This must be checked
-                // BEFORE fold rules to prevent a second fold (e.g. ơ→o) from
-                // firing instead of the untoggle (ơ→o + release w).
-                if (!syllableLocked && RimeMap.isFoldKey(cLow) && out.nucleus.isNotEmpty() && !justUntoggled) {
-                    if (lastFoldKey != '\u0000' && cLow == lastFoldKey &&
-                        lastFoldNucIdx >= 0 && lastFoldNucIdx < out.nucleus.length &&
-                        out.nucleus[lastFoldNucIdx] != RimeMap.plainOf(out.nucleus[lastFoldNucIdx])) {
-                        if (standaloneWFold) {
-                            out.nucleus = ""
-                            out.rawSuffix += c
-                            syllableLocked = true; toneLocked = true
-                        } else {
-                            val sb = StringBuilder(out.nucleus); sb[lastFoldNucIdx] = RimeMap.plainOf(out.nucleus[lastFoldNucIdx]); out.nucleus = sb.toString()
-                            if (out.coda.isNotEmpty()) {
-                                // Coda already present: the released fold key cannot
-                                // re-join the nucleus — emit it as literal text after
-                                // the valid syllable (banaan -> bana + n = banan).
-                                out.rawSuffix += c
-                                syllableLocked = true; toneLocked = true
-                            } else {
-                                out.nucleus += c
-                            }
-                        }
-                        lastFoldKey = '\u0000'; lastFoldNucIdx = -1
-                        nucKey = if (out.nucleus.isEmpty()) 0 else RimeMap.rimeKey(out.nucleus)
-                        rimeKey = nucKey
-                        standaloneWFold = false
-                        justUntoggled = true
-                        pos++; continue
-                    }
-                    val foldIdx = applyFoldRules(c, nucKey, pos, raw, out)
-                    if (foldIdx >= 0) {
-                        lastFoldKey = cLow; lastFoldNucIdx = foldIdx
-                        nucKey = RimeMap.rimeKey(out.nucleus)
-                        rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
-                        standaloneWFold = false
-                        justUntoggled = false
-                        pos++; continue
-                    }
-                }
-                // Vowel combination
-                if (!syllableLocked && out.nucleus.isNotEmpty() && cLow != 'w') {
-                    val combo = RimeMap.combineNucleus(out.nucleus, c)
-                    if (combo != null) {
-                        out.nucleus = combo
-                        nucKey = RimeMap.rimeKey(out.nucleus)
-                        rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
-                        pos++; continue
-                    }
-                }
-                // Plain vowel → extend nucleus (only while syllable is unlocked)
-                if (!syllableLocked && out.coda.isEmpty()) {
-                    val candidateKey = RimeMap.extendKeySingle(nucKey, c)
-                    if (RimeMap.isValidPrefix(candidateKey)) {
-                        out.nucleus += c
-                        nucKey = candidateKey
-                        rimeKey = nucKey
-                        lastFoldKey = '\u0000'; lastFoldNucIdx = -1
-                        pos++; continue
-                    }
-                }
-                justUntoggled = false
-                out.rawSuffix += c; syllableLocked = true; toneLocked = true
+            // 2. Tone key (s/f/r/x/j/z).
+            if (RimeMap.isToneKey(cLow)) {
+                handleToneKey(c, cLow, out, ctx)
                 pos++; continue
             }
 
-            // ── Base vowel (not a fold key) → extend nucleus ──────
-            if (!syllableLocked && !OnsetMap.isConsonant(cLow) && RimeMap.isBaseVowel(c)) {
-                if (out.nucleus.isEmpty()) {
-                    // First vowel: start nucleus
-                    out.nucleus = c.toString()
-                    nucKey = RimeMap.rimeKey(out.nucleus)
-                    rimeKey = nucKey
-                    justUntoggled = false
-                    pos++; continue
-                }
-                if (out.coda.isEmpty()) {
-                    val candidateKey = RimeMap.extendKeySingle(nucKey, c)
-                    if (RimeMap.isValidPrefix(candidateKey)) {
-                        out.nucleus += c
-                        nucKey = candidateKey
-                        rimeKey = nucKey
-                        pos++; continue
-                    }
-                }
+            // 3. Vowel modifier / fold key (e/o/a/w).
+            if (cLow == 'e' || cLow == 'o' || cLow == 'a' || cLow == 'w') {
+                pos = handleModifierKey(raw, c, cLow, pos, out, ctx)
+                continue
             }
 
-            // ── Consonant: try as coda, otherwise literal + lock ───
-            if (!syllableLocked && OnsetMap.isConsonant(cLow) && out.nucleus.isNotEmpty()) {
-                // Try as coda — RimeMap is the authority (O(1) flatmap lookup)
-                val codaLen = out.coda.length
-                val codaOk = codaLen < 2
-                if (codaOk) {
-                    val rk = RimeMap.extendKeySingle(rimeKey, c)
-                    if (RimeMap.isValidPrefixWithTone(rk, out.tone.index)) {
-                        out.coda += c
-                        rimeKey = rk
-                        pos++; continue
+            // 4. Plain vowel → start or extend the nucleus.
+            if (!ctx.syllableLocked && !OnsetMap.isConsonant(cLow) && RimeMap.isBaseVowel(c)) {
+                if (tryPlainVowel(c, out, ctx)) { pos++; continue }
+            }
+
+            // 5. Consonant → coda (or deferred fold lookahead, or literal).
+            if (!ctx.syllableLocked && OnsetMap.isConsonant(cLow) && out.nucleus.isNotEmpty()) {
+                val consumed = tryCoda(raw, c, cLow, pos, len, out, ctx)
+                if (consumed > 0) { pos += consumed; continue }
+            }
+
+            // 6. Any other char / rejected → literal + hard lock.
+            out.rawSuffix += c; ctx.syllableLocked = true; ctx.toneLocked = true; pos++
+        }
+    }
+
+    private fun matchLen(out: SyllableState): Int = out.onset.length
+
+    /** Onset fold handler — returns true when the key was consumed by d→đ or untoggle. */
+    private fun tryOnsetFold(c: Char, cLow: Char, out: SyllableState, ctx: ScanCtx): Boolean {
+        if (ctx.syllableLocked || out.onset.isEmpty() || !OnsetMap.isRegisteredFoldKey(cLow)) return false
+        val oFold = OnsetMap.foldTarget(ctx.oKey, cLow)
+        if (oFold != 0) {
+            out.onset = OnsetMap.applyFold(out.onset, oFold)
+            ctx.oKey = OnsetMap.onsetKeyOf(out.onset)
+            return true
+        }
+        val ufKey = OnsetMap.foldKeyForTarget(ctx.oKey)
+        if (ufKey != '\u0000' && cLow == ufKey) {
+            out.onset = OnsetMap.unfoldOnset(out.onset, ufKey)
+            ctx.oKey = OnsetMap.onsetKeyOf(out.onset)
+            out.rawSuffix += c
+            ctx.syllableLocked = true; ctx.toneLocked = true
+            return true
+        }
+        return false
+    }
+
+    /** Tone handler — applies, clears, or untoggles the tone; locks on rejection. */
+    private fun handleToneKey(c: Char, cLow: Char, out: SyllableState, ctx: ScanCtx) {
+        if (ctx.toneLocked) { out.rawSuffix += c; ctx.syllableLocked = true; return }
+        val targetTone = Tone.fromKey(cLow)
+        if (targetTone != null && out.nucleus.isNotEmpty()) {
+            if (out.nucleus.length >= 2) {
+                val n0 = out.nucleus[0].lowercaseChar()
+                val n1 = out.nucleus[1].lowercaseChar()
+                if ((n0 == 'a' && n1 == 'a') || (n0 == 'e' && n1 == 'e')) {
+                    out.rawSuffix += c; ctx.syllableLocked = true; ctx.toneLocked = true; return
+                }
+            }
+            if (targetTone == Tone.NONE && out.tone == Tone.NONE) {
+                out.rawSuffix += c; ctx.syllableLocked = true; ctx.toneLocked = true
+                return
+            }
+            if (targetTone == Tone.NONE && out.tone != Tone.NONE) {
+                out.tone = Tone.NONE
+                ctx.lastToneKey = '\u0000'
+                return
+            }
+            if (ctx.lastToneKey != '\u0000' && cLow == ctx.lastToneKey) {
+                if (out.tone != Tone.NONE) {
+                    out.tone = Tone.NONE
+                    out.rawSuffix += c
+                    ctx.lastToneKey = '\u0000'
+                } else {
+                    out.rawSuffix += c
+                }
+                ctx.toneLocked = true
+                ctx.syllableLocked = true
+                return
+            }
+            val rk = ctx.rimeKey
+            if (RimeMap.isRimeHashValidForTone(rk.toLong(), targetTone)) {
+                out.tone = targetTone
+                ctx.lastToneKey = cLow
+                ctx.toneLocked = false
+            } else {
+                out.rawSuffix += c
+                ctx.toneLocked = true
+                ctx.syllableLocked = true
+            }
+            return
+        }
+        out.rawSuffix += c; ctx.syllableLocked = true; ctx.toneLocked = true
+    }
+
+    /**
+     * Modifier/fold-key handler (e/o/a/w) — w-special rules, untoggle-first fold,
+     * vowel combination, plain extend.  Always consumes the key (returns new pos).
+     */
+    private fun handleModifierKey(raw: CharSequence, c: Char, cLow: Char, pos: Int, out: SyllableState, ctx: ScanCtx): Int {
+        // 'w' after a uo-family w-compound (uơ/ươ): map says the fold cannot untoggle,
+        // so the repeated key is literal right after the fold key (uoww → uơw); the
+        // ua/oa-family (ưa/oă) untoggle normally (huawwei → huawei).
+        if (cLow == 'w' && !ctx.syllableLocked && ctx.lastFoldKey == 'w' &&
+            out.nucleus.isNotEmpty() &&
+            RimeMap.foldWRepeatLiteral(RimeMap.foldSlot(ctx.nucKey))) {
+            if (pos > 0 && raw[pos - 1].lowercaseChar() == 'w') {
+                out.rawSuffix += c
+                ctx.syllableLocked = true; ctx.toneLocked = true
+            }
+            ctx.lastFoldKey = '\u0000'
+            return pos + 1
+        }
+        // Second 'w' after onset 'w' → discard (w+w → w), only when directW=OFF.
+        if (!options.directW && cLow == 'w' && !ctx.syllableLocked &&
+            !ctx.wOnsetAbsorbed && out.nucleus.isEmpty() &&
+            out.onset.isNotEmpty() && out.onset[0].lowercaseChar() == 'w') {
+            ctx.wOnsetAbsorbed = true
+            return pos + 1
+        }
+        // Standalone 'w' / onset-w-compatible → ư (sw→sư).  qu+ư is rejected by the
+        // syllable-prefix map (quw stays literal quw).  Another 'w' untoggles it.
+        if (!options.directW && cLow == 'w' && !ctx.syllableLocked &&
+            out.nucleus.isEmpty() &&
+            (out.onset.isEmpty() || out.onset[0].lowercaseChar() != 'w')) {
+            val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
+            val comboOk = out.onset.isEmpty() ||
+                RimeMap.isSyllableDisplayPrefixValid((out.onset + wChar).lowercase())
+            if (comboOk) {
+                out.nucleus = wChar.toString()
+                ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                ctx.rimeKey = ctx.nucKey
+                ctx.lastFoldKey = 'w'; ctx.lastFoldNucIdx = 0
+                ctx.standaloneWFold = true
+                return pos + 1
+            }
+        }
+        // Untoggle FIRST: pressing the same fold key again on the same position
+        // releases the fold as literal (not a second fold: ơ→o + release w).
+        if (!ctx.syllableLocked && RimeMap.isFoldKey(cLow) && out.nucleus.isNotEmpty() && !ctx.justUntoggled) {
+            if (ctx.lastFoldKey != '\u0000' && cLow == ctx.lastFoldKey &&
+                ctx.lastFoldNucIdx >= 0 && ctx.lastFoldNucIdx < out.nucleus.length &&
+                out.nucleus[ctx.lastFoldNucIdx] != RimeMap.plainOf(out.nucleus[ctx.lastFoldNucIdx])) {
+                if (ctx.standaloneWFold) {
+                    out.nucleus = ""
+                    out.rawSuffix += c
+                    ctx.syllableLocked = true; ctx.toneLocked = true
+                } else {
+                    val sb = StringBuilder(out.nucleus)
+                    sb[ctx.lastFoldNucIdx] = RimeMap.plainOf(out.nucleus[ctx.lastFoldNucIdx])
+                    out.nucleus = sb.toString()
+                    if (out.coda.isNotEmpty()) {
+                        // Coda present: the released fold key cannot re-join the
+                        // nucleus — it becomes literal text (banaan → banan).
+                        out.rawSuffix += c
+                        ctx.syllableLocked = true; ctx.toneLocked = true
+                    } else {
+                        out.nucleus += c
                     }
-                    // Deferred fold lookahead: if the next char in raw is a fold key
-                    // that transforms the nucleus to accept this coda, pre-apply the fold
-                    // and consume the fold key (tuana → tuân: n after "ua", 'a' folds→uâ).
-                    if (out.coda.isEmpty() && pos + 1 < len) {
-                        val nextChar = raw[pos + 1].lowercaseChar()
-                        if (RimeMap.isFoldKey(nextChar)) {
-                            val fold = foldPrimaryForSlot(RimeMap.foldSlot(nucKey), nextChar)
+                }
+                ctx.lastFoldKey = '\u0000'; ctx.lastFoldNucIdx = -1
+                ctx.nucKey = if (out.nucleus.isEmpty()) 0 else RimeMap.rimeKey(out.nucleus)
+                ctx.rimeKey = ctx.nucKey
+                ctx.standaloneWFold = false
+                ctx.justUntoggled = true
+                return pos + 1
+            }
+            val foldIdx = applyFoldRules(c, ctx.nucKey, pos, raw, out)
+            if (foldIdx >= 0) {
+                ctx.lastFoldKey = cLow; ctx.lastFoldNucIdx = foldIdx
+                ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                ctx.rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
+                ctx.standaloneWFold = false
+                ctx.justUntoggled = false
+                return pos + 1
+            }
+        }
+        // Vowel combination (ua + o → uô etc., from the map).
+        if (!ctx.syllableLocked && out.nucleus.isNotEmpty() && cLow != 'w') {
+            val combo = RimeMap.combineNucleus(out.nucleus, c)
+            if (combo != null) {
+                out.nucleus = combo
+                ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                ctx.rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
+                return pos + 1
+            }
+        }
+        // Plain vowel → extend the nucleus while syllable is unlocked.
+        if (!ctx.syllableLocked && out.coda.isEmpty()) {
+            val candidateKey = RimeMap.extendKeySingle(ctx.nucKey, c)
+            if (RimeMap.isValidPrefix(candidateKey)) {
+                out.nucleus += c
+                ctx.nucKey = candidateKey
+                ctx.rimeKey = ctx.nucKey
+                ctx.lastFoldKey = '\u0000'; ctx.lastFoldNucIdx = -1
+                return pos + 1
+            }
+        }
+        ctx.justUntoggled = false
+        out.rawSuffix += c; ctx.syllableLocked = true; ctx.toneLocked = true
+        return pos + 1
+    }
+
+    /** Plain vowel → start a nucleus or extend it; false falls through to literal. */
+    private fun tryPlainVowel(c: Char, out: SyllableState, ctx: ScanCtx): Boolean {
+        if (out.nucleus.isEmpty()) {
+            out.nucleus = c.toString()
+            ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+            ctx.rimeKey = ctx.nucKey
+            ctx.justUntoggled = false
+            return true
+        }
+        if (out.coda.isEmpty()) {
+            val candidateKey = RimeMap.extendKeySingle(ctx.nucKey, c)
+            if (RimeMap.isValidPrefix(candidateKey)) {
+                out.nucleus += c
+                ctx.nucKey = candidateKey
+                ctx.rimeKey = ctx.nucKey
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Consonant → coda via the flat map; on rejection, deferred-fold lookahead may
+     * pre-apply a fold that makes this coda valid (tuana → tuân, chuanra → chuẩn).
+     * Returns chars consumed (1 literal / coda, 2 fold lookahead, 3 tone+fold), or
+     * 0 when the caller's guard didn't match (rare — handled by literal fallback).
+     */
+    private fun tryCoda(raw: CharSequence, c: Char, cLow: Char, pos: Int, len: Int, out: SyllableState, ctx: ScanCtx): Int {
+        val codaLen = out.coda.length
+        val codaOk = codaLen < 2
+        if (codaOk) {
+            val rk = RimeMap.extendKeySingle(ctx.rimeKey, c)
+            if (RimeMap.isValidPrefixWithTone(rk, out.tone.index)) {
+                out.coda += c
+                ctx.rimeKey = rk
+                return 1
+            }
+            if (out.coda.isEmpty() && pos + 1 < len) {
+                val nextChar = raw[pos + 1].lowercaseChar()
+                if (RimeMap.isFoldKey(nextChar)) {
+                    val fold = foldPrimaryForSlot(RimeMap.foldSlot(ctx.nucKey), nextChar)
+                    if (fold != 0) {
+                        val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
+                        if (foldedNuc != out.nucleus) {
+                            val deferredRk = RimeMap.keyCat(foldedNuc, foldedNuc.length, c)
+                            if (RimeMap.isValidPrefixWithTone(deferredRk, out.tone.index)) {
+                                out.nucleus = foldedNuc
+                                ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                                out.coda += c
+                                ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
+                                return 2  // skip coda char + fold key
+                            }
+                        }
+                    }
+                }
+                // Deferred fold after a tone key: coda is rejected now but valid once
+                // a later fold key transforms the nucleus (chuanra → chuẩn).
+                if (!ctx.toneLocked && pos + 2 < len && RimeMap.isToneKey(raw[pos + 1].lowercaseChar())) {
+                    val toneKey = raw[pos + 1].lowercaseChar()
+                    val foldKey = raw[pos + 2].lowercaseChar()
+                    if (RimeMap.isFoldKey(foldKey)) {
+                        val targetTone = Tone.fromKey(toneKey)
+                        if (targetTone != null && targetTone != Tone.NONE) {
+                            val fold = foldPrimaryForSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
                             if (fold != 0) {
                                 val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
                                 if (foldedNuc != out.nucleus) {
                                     val deferredRk = RimeMap.keyCat(foldedNuc, foldedNuc.length, c)
-                                    if (RimeMap.isValidPrefixWithTone(deferredRk, out.tone.index)) {
+                                    if (RimeMap.isValidPrefix(deferredRk) &&
+                                        RimeMap.isToneAllowed(deferredRk, targetTone.index)) {
                                         out.nucleus = foldedNuc
-                                        nucKey = RimeMap.rimeKey(out.nucleus)
+                                        ctx.nucKey = RimeMap.rimeKey(out.nucleus)
                                         out.coda += c
-                                        rimeKey = RimeMap.extendKeySingle(nucKey, c)
-                                        pos += 2  // skip coda char + fold key
-                                        continue
-                                    }
-                                }
-                            }
-                        }
-                        // Deferred fold after a tone key: the coda is rejected now but
-                        // becomes valid once a later fold key transforms the nucleus and
-                        // the tone key in between applies to the completed rime
-                        // (chuanra → chuẩn: ua+n, tone r, fold a → uâ+n).
-                        if (!toneLocked && pos + 2 < len && isToneKey(raw[pos + 1].lowercaseChar())) {
-                            val toneKey = raw[pos + 1].lowercaseChar()
-                            val foldKey = raw[pos + 2].lowercaseChar()
-                            if (RimeMap.isFoldKey(foldKey)) {
-                                val targetTone = Tone.fromKey(toneKey)
-                                if (targetTone != null && targetTone != Tone.NONE) {
-                                    val fold = foldPrimaryForSlot(RimeMap.foldSlot(nucKey), foldKey)
-                                    if (fold != 0) {
-                                        val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
-                                        if (foldedNuc != out.nucleus) {
-                                            val deferredRk = RimeMap.keyCat(foldedNuc, foldedNuc.length, c)
-                                            if (RimeMap.isValidPrefix(deferredRk) &&
-                                                RimeMap.isToneAllowed(deferredRk, targetTone.index)) {
-                                                out.nucleus = foldedNuc
-                                                nucKey = RimeMap.rimeKey(out.nucleus)
-                                                out.coda += c
-                                                rimeKey = RimeMap.extendKeySingle(nucKey, c)
-                                                out.tone = targetTone
-                                                lastToneKey = toneKey
-                                                pos += 3  // skip coda char + tone key + fold key
-                                                continue
-                                            }
-                                        }
+                                        ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
+                                        out.tone = targetTone
+                                        ctx.lastToneKey = toneKey
+                                        return 3  // skip coda char + tone key + fold key
                                     }
                                 }
                             }
                         }
                     }
                 }
-                // Consonants never extend the nucleus (nucleus is vowels-only).
-                // Not a valid coda → literal + hard lock.
-                out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++; continue
             }
-
-            // ── Any other char → rawSuffix ────────────────────────
-            out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++
         }
-
-        // Prefix-freeze: never revert already-composed Vietnamese back to raw
-        // text.  When rawSuffix collects genuine consonants, the syllable is
-        // simply locked; subsequent keys append literally on top of the
-        // composed output (invalid input becomes literal without destroying
-        // valid output).
-
+        // Not a valid coda → literal + hard lock.
+        out.rawSuffix += c; ctx.syllableLocked = true; ctx.toneLocked = true
+        return 1
     }
 
     /** Primary fold code for [foldKey] on the nucleus slot obtained via [RimeMap.foldSlot]; 0 = none. */
