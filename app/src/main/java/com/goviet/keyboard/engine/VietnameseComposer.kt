@@ -33,9 +33,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         get() = options.oldTonePlacement
         set(v) { options.oldTonePlacement = v }
 
-    // ── Fold key set ───────────────────────────────────────────────
-    private val FOLD_KEYS = setOf('e', 'o', 'a', 'w')
-
     // ── Data types ─────────────────────────────────────────────────
 
     class SyllableState(
@@ -188,7 +185,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             // the lookahead stops at the tone key and misses the coda, causing
             // w-fold to pick the open form "uơ" instead of the closed "ươ".
             if (isToneKey(c)) { i++; continue }
-            if (isFoldKey(c)) { i++; continue }
+            if (RimeMap.isFoldKey(c)) { i++; continue }
             if (isConsonant(c)) {
                 if (tailStart < 0) tailStart = i
                 tailEnd = i + 1
@@ -215,8 +212,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         }
         return sb.toString()
     }
-
-    private fun isFoldKey(c: Char): Boolean = RimeMap.isFoldKey(c)
 
     private fun resegment(raw: CharSequence, out: SyllableState) {
         out.reset()
@@ -412,7 +407,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 // untoggles and releases the key as literal. This must be checked
                 // BEFORE fold rules to prevent a second fold (e.g. ơ→o) from
                 // firing instead of the untoggle (ơ→o + release w).
-                if (!syllableLocked && isFoldKey(cLow) && out.nucleus.isNotEmpty() && !justUntoggled) {
+                if (!syllableLocked && RimeMap.isFoldKey(cLow) && out.nucleus.isNotEmpty() && !justUntoggled) {
                     if (lastFoldKey != '\u0000' && cLow == lastFoldKey &&
                         lastFoldNucIdx >= 0 && lastFoldNucIdx < out.nucleus.length &&
                         out.nucleus[lastFoldNucIdx] != RimeMap.plainOf(out.nucleus[lastFoldNucIdx])) {
@@ -513,7 +508,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     // and consume the fold key (tuana → tuân: n after "ua", 'a' folds→uâ).
                     if (out.coda.isEmpty() && pos + 1 < len) {
                         val nextChar = raw[pos + 1].lowercaseChar()
-                        if (nextChar in FOLD_KEYS) {
+                        if (RimeMap.isFoldKey(nextChar)) {
                             val fold = foldPrimaryForSlot(RimeMap.foldSlot(nucKey), nextChar)
                             if (fold != 0) {
                                 val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
@@ -537,7 +532,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         if (!toneLocked && pos + 2 < len && isToneKey(raw[pos + 1].lowercaseChar())) {
                             val toneKey = raw[pos + 1].lowercaseChar()
                             val foldKey = raw[pos + 2].lowercaseChar()
-                            if (foldKey in FOLD_KEYS) {
+                            if (RimeMap.isFoldKey(foldKey)) {
                                 val targetTone = Tone.fromKey(toneKey)
                                 if (targetTone != null && targetTone != Tone.NONE) {
                                     val fold = foldPrimaryForSlot(RimeMap.foldSlot(nucKey), foldKey)
@@ -675,12 +670,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     // ================================================================
     // PUBLIC API
     // ================================================================
-
-    fun feedKey(state: SyllableState, key: Char): Boolean {
-        // Controller manages composingRaw; feedKey just marks key as handled.
-        // Actual resegment is done via compileRaw/replayRawToState.
-        return true
-    }
 
     fun feedKey(composingRaw: StringBuilder, state: SyllableState, key: Char): Boolean {
         // Controller already appended key to composingRaw — just resegment.
@@ -926,8 +915,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     // ================================================================
 
     companion object {
-        private val displayBuffer = ThreadLocal.withInitial { CharArray(32) }
-
         @JvmStatic
         fun isToneKey(c: Char): Boolean = RimeMap.isToneKey(c)
 
