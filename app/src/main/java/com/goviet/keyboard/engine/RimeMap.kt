@@ -654,6 +654,30 @@ object RimeMap {
     @JvmStatic
     fun foldPos(code: Int): Int = code and 7
 
+    /**
+     * Fold code for [foldKey] on the nucleus with packed [nucleusKey].
+     * Dispatches foldE/O/A/WPrimary by the fold key — thin key-based wrapper
+     * over the slot-based accessors.  Returns 0 when no fold applies.
+     */
+    @JvmStatic
+    fun foldPrimary(nucleusKey: Int, foldKey: Char): Int {
+        val slot = foldSlot(nucleusKey)
+        return when (foldKey.lowercaseChar()) {
+            'e' -> foldE(slot)
+            'o' -> foldO(slot)
+            'a' -> foldA(slot)
+            'w' -> foldWPrimary(slot)
+            else -> 0
+        }
+    }
+
+    /**
+     * Alt fold code (dual-variant uo→uơ/ươ) for the nucleus with [nucleusKey].
+     * Thin wrapper over [foldWAlt]; returns 0 when absent.
+     */
+    @JvmStatic
+    fun foldAlt(nucleusKey: Int): Int = foldWAlt(foldSlot(nucleusKey))
+
     /** Apply a fold [code] to [nucleus], preserving casing.  Zero boxing. */
     @JvmStatic
     fun applyFold(nucleus: String, code: Int): String {

@@ -120,8 +120,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     )
 
     sealed class CompositionResult {
-        data class Update(val text: CharSequence) : CompositionResult()
-        data class CommitAndStartNew(val commitText: String, val newChar: Char) : CompositionResult()
+        abstract val text: CharSequence
+        data class Update(override val text: CharSequence) : CompositionResult()
+        data class CommitAndStartNew(val commitText: String, val newChar: Char) : CompositionResult() {
+            override val text: CharSequence get() = commitText
+        }
     }
 
     data class SyncResult(
