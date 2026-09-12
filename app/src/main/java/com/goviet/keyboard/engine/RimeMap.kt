@@ -22,17 +22,19 @@ object RimeMap {
     // Index 0..27 = Vietnamese chars; 28 = PADDING (for shorter keys).
     // 5 bits per char, max 5 chars → 25-bit key (fits Int).
 
-    /** Rime-alphabet character set: a ă â e ê i o ô ơ u ư y c ch g h m n ng nh p t + l r s j x q.
-     *  The last five are never part of a valid rime string, but they ARE typed into the
-     *  raw buffer — without unique indices they'd encode as index 0 (='a') and produce
-     *  false-positive flatmap hits (e.g. rimeKey("ul") == rimeKey("ua"), rimeKey("lu") == "au"). */
-    private const val RIME_ALPHA = "aăâeêioôơuưycmntpghlrsjxq"
+    /** Rime-alphabet character set: a ă â e ê i o ô ơ u ư y c g h m n p t + l r s j x q
+     *  plus guard slots b d k v z.  The guard chars are never part of a valid rime
+     *  string, but they ARE typed into the raw buffer — without unique indices they'd
+     *  encode as index 0 (='a') and produce false-positive flatmap hits
+     *  (e.g. rimeKey("ul") == rimeKey("ua"), rimeKey("uk") == rimeKey("ua") → "uk"
+     *  wrongly accepted as a coda). */
+    private const val RIME_ALPHA = "aăâeêioôơuưycmntpghlrsjxqbdkvz"
 
     /** Unique index for 'w' — prevents collision with 'a' (index 0) in packed keys.
      *  'w' never appears in valid Vietnamese rimes, but after an untoggle (e.g. uww → uw)
      *  it can appear in the nucleus string. Without this, rimeKey("uw") == rimeKey("ua")
      *  causing false-positive tone/coda lookups on the untoggled literal. */
-    private const val W_INDEX = 25
+    private const val W_INDEX = 30
 
     /** 5-bit index for each Vietnamese rime character.  Non-rime chars → 0 (maps to 'a'). */
     private val CHAR_IDX = IntArray(512).also { arr ->

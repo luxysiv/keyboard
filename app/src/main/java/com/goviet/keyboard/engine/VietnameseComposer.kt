@@ -386,16 +386,22 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 // consonant onset: sw→sư, dw→dư, lw→lư).  Onset 'w' is excluded —
                 // its repeated w is absorbed by the branch above.  The ư was created
                 // from nothing, so another 'w' cancels it back to raw "tw".
+                // The fold is accepted only when the onset+ư combo lives in the
+                // valid-syllable prefix map — qu+ư does not (quw stays literal quw).
                 if (!options.directW && cLow == 'w' && !syllableLocked &&
                     out.nucleus.isEmpty() &&
                     (out.onset.isEmpty() || out.onset[0].lowercaseChar() != 'w')) {
                     val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
-                    out.nucleus = wChar.toString()
-                    nucKey = RimeMap.rimeKey(out.nucleus)
-                    rimeKey = nucKey
-                    lastFoldKey = 'w'; lastFoldNucIdx = 0
-                    standaloneWFold = true
-                    pos++; continue
+                    val comboOk = out.onset.isEmpty() ||
+                        TokenValidMap.isDisplayPrefixValid((out.onset + wChar).lowercase())
+                    if (comboOk) {
+                        out.nucleus = wChar.toString()
+                        nucKey = RimeMap.rimeKey(out.nucleus)
+                        rimeKey = nucKey
+                        lastFoldKey = 'w'; lastFoldNucIdx = 0
+                        standaloneWFold = true
+                        pos++; continue
+                    }
                 }
 
                 // Vowel modifier: untoggle FIRST, then fold rules.

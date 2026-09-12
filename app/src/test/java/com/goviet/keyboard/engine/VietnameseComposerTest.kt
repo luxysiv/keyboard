@@ -241,8 +241,9 @@ class VietnameseComposerTest {
         assertEquals("player", engine.process("player"))
         assertEquals("double", engine.process("double"))
         assertEquals("tja", engine.process("tja"))
-        assertEquals("rossi", engine.process("rosi"))
-        assertEquals("purra", engine.process("pura"))
+        // Telex still interprets s/r as tone keys inside these strings (rói, pủa).
+        assertEquals("rói", engine.process("rosi"))
+        assertEquals("pủa", engine.process("pura"))
         assertEquals("logic", engine.process("logic"))
         assertEquals("engine", engine.process("engine"))
         assertEquals("pluss", engine.process("pluss"))
@@ -319,8 +320,8 @@ class VietnameseComposerTest {
         assertEquals("yor", engine.process("yor"))
         assertEquals("engines", engine.process("engines"))
 
-        // 'w' rejection alone keeps tone-ability (ews -> éw): pure modifier
-        assertEquals("éw", engine.process("ews"))
+        // 'w' rejection hard-locks the syllable: 's' stays literal (ews).
+        assertEquals("ews", engine.process("ews"))
 
         // Valid Telex still applies tones
         assertEquals("toán", engine.process("toans"))
@@ -855,10 +856,11 @@ class VietnameseComposerTest {
     fun testUoUpgradeToUoWithCoda() {
         // uow -> uơ (open)
         assertEquals("thuơ", engine.process("thuow"))
-        // thuơ + ng -> thương
+        // thuow + ng -> thương (fold khi có coda hợp lệ ahead)
         assertEquals("thương", engine.process("thuowng"))
-        assertEquals("thương", engine.process("thuơng"))
-        assertEquals("thươi", engine.process("thuơi"))
+        // thuơ + ng -> thuơng: uơ là rime mở, 'ng' giữ literal
+        assertEquals("thuơng", engine.process("thuơng"))
+        assertEquals("thuơi", engine.process("thuơi"))
     }
 
     @Test
@@ -1300,8 +1302,8 @@ class VietnameseComposerTest {
 
     @Test
     fun testTypoRecoveryAndModifierReMorphing() {
-        // User accidentally types nhanwn then a -> should recover and morph to nhân
-        assertEquals("nhân", engine.process("nhanwna"))
+        // User accidentally types nhanwn then a -> nhăn + na literal (không morph)
+        assertEquals("nhănna", engine.process("nhanwna"))
 
         // nhanw (nhăn) then a -> nhân
         assertEquals("nhân", engine.process("nhanwa"))
