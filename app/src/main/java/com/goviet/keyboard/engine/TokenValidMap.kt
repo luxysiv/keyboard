@@ -8,6 +8,13 @@ object TokenValidMap {
     private val _table = LongArray(TABLE_SIZE)
 
     private fun packKey(s: String): Long {
+        // Chars occupy bit positions 50..5 (5 bits each) — at most 10 chars.
+        // Longer strings would shift into negative bit offsets (JVM shift
+        // counts are taken mod 64, silently corrupting the key), so reject
+        // them explicitly instead of relying on the current data never
+        // reaching that length.  The empty string is also rejected: its key
+        // 0L would collide with the ``_table`` empty-slot sentinel.
+        if (s.isEmpty() || s.length > 10) return -1L
         var key = s.length.toLong() shl 55
         for (i in s.indices) {
             val idx = s[i].code - 'a'.code

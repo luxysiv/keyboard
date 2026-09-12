@@ -215,6 +215,13 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     private fun isFoldKey(c: Char): Boolean = VietnamesePhonology.isFoldKey(c)
 
+    /** True if [nucleus] is a uo-family w-compound (uơ/ươ) — the only w-compound
+     *  forms whose repeated 'w' toggles are absorbed instead of untoggled. */
+    private fun nucHasUoCompound(nucleus: String): Boolean {
+        val n = nucleus.lowercase()
+        return n.contains("ươ") || n.contains("uơ")
+    }
+
     private fun resegment(raw: CharSequence, out: SyllableState) {
         out.reset()
         val len = raw.length
@@ -357,12 +364,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
             // ── Vowel modifier / vowel / consonant ─────────────────
             if (cLow == 'e' || cLow == 'o' || cLow == 'a' || cLow == 'w') {
-                // Second 'w' immediately after a w-compound (uơ/ươ/ưa/oă)
+                // Second 'w' immediately after a uo-family w-compound (uơ/ươ)
                 // is absorbed: the compound fold's toggle cycle is already consumed,
                 // so it must not unfold back to "uo"+"w" (fixes huowwngs → hướng).
+                // The ua/oa-family compounds (ưa/oă) untoggle normally instead,
+                // releasing the 'w' as literal text (huawwei → huawei, muaww → muaw).
                 if (cLow == 'w' && !syllableLocked && lastFoldKey == 'w' &&
                     out.nucleus.isNotEmpty() &&
-                    RimeMap.isWCompound(RimeMap.foldSlot(nucKey))) {
+                    RimeMap.isWCompound(RimeMap.foldSlot(nucKey)) &&
+                    nucHasUoCompound(out.nucleus)) {
                     lastFoldKey = '\u0000'
                     pos++; continue
                 }

@@ -338,6 +338,33 @@ class VietnameseComposerTest {
     }
 
     @Test
+    fun testDoubleWUntoggleUaFamilyAndHuawei() {
+        // h u a w w e i -> huawei: phím w thứ 2 sau ưa/oă hủy fold và thả w ra literal.
+        assertEquals("huawei", engine.process("huawwei"))
+        assertEquals("muaw", engine.process("muaww"))
+        assertEquals("chuaw", engine.process("chuaww"))
+        assertEquals("hoaw", engine.process("hoaww"))
+        assertEquals("đuaw", engine.process("dduaww"))
+        // Nhánh uo (uơ/ươ) vẫn absorb phím w thứ 2 (hướng, thuơ...).
+        assertEquals("uơ", engine.process("uoww"))
+        assertEquals("thuơ", engine.process("thuoww"))
+        assertEquals("bươ", engine.process("buoww"))
+        assertEquals("hướng", engine.process("huowwngs"))
+    }
+
+    @Test
+    fun testTokenValidMapPackKeyGuards() {
+        // TokenValidMap: chuỗi > 10 ký tự và chuỗi rỗng phải bị chặn rõ ràng
+        // (không để phép dịch bit âm / sentinel 0L ghi nhầm dữ liệu).
+        assertTrue(TokenValidMap.isValidPrefix("nghieng"))
+        assertFalse(TokenValidMap.isValidPrefix("restaurant"))
+        assertFalse(TokenValidMap.isValidPrefix("particularly"))
+        assertFalse(TokenValidMap.isValidPrefix(""))
+        assertFalse(TokenValidMap.isValidPrefix("huaw"))
+        assertTrue(TokenValidMap.isValidPrefix("hua"))
+    }
+
+    @Test
     fun testIncrementalProcessKey() {
         engine.reset()
         assertEquals("t", engine.processKey('t').text)
