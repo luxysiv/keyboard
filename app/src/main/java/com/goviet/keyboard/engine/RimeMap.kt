@@ -642,10 +642,10 @@ object RimeMap {
     fun foldWPrimaryLookahead(slot: Int): Boolean =
         slot >= 0 && (_foldW[slot] and (1 shl 16)) != 0
 
-    /** True when a repeated 'w' after the w-compound at [slot] is absorbed
-     *  instead of untoggled (uo-family uơ/ươ: huowwngs → hướng, uoww → uơ). */
+    /** True when a repeated 'w' after the w-compound at [slot] cannot untoggle:
+     *  it is released as literal text (uo-family uơ/ươ: uoww → uơw). */
     @JvmStatic
-    fun foldWAbsorbSecond(slot: Int): Boolean =
+    fun foldWRepeatLiteral(slot: Int): Boolean =
         slot >= 0 && (_foldW[slot] and (1 shl 30)) != 0
 
     /** Position where the fold lands (untoggle anchor). */

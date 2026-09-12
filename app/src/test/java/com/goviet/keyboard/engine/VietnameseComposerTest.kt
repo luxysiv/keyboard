@@ -328,13 +328,14 @@ class VietnameseComposerTest {
     }
 
     @Test
-    fun testSecondWAfterCompoundFoldIsAbsorbed() {
-        // hoạt động: gõ h u o w w n g s -> hướng (2nd w absorbed)
+    fun testSecondWAfterUoCompoundIsLiteral() {
+        // u o w -> uơ (fold), u o w w -> uơw: phím w thứ 2 sau uơ/ươ không hủy
+        // fold cũng không bị nuốt — nó được thả ra làm literal text.
         assertEquals("hướng", engine.process("huowngs"))
-        assertEquals("hướng", engine.process("huowwngs"))
-        assertEquals("uơ", engine.process("uoww"))
-        assertEquals("thuơ", engine.process("thuoww"))
-        assertEquals("bươ", engine.process("buoww"))
+        assertEquals("uơw", engine.process("uoww"))
+        assertEquals("thuơw", engine.process("thuoww"))
+        assertEquals("bươw", engine.process("buoww"))
+        assertEquals("hươwngs", engine.process("huowwngs"))
     }
 
     @Test
@@ -345,11 +346,11 @@ class VietnameseComposerTest {
         assertEquals("chuaw", engine.process("chuaww"))
         assertEquals("hoaw", engine.process("hoaww"))
         assertEquals("đuaw", engine.process("dduaww"))
-        // Nhánh uo (uơ/ươ) vẫn absorb phím w thứ 2 (hướng, thuơ...).
-        assertEquals("uơ", engine.process("uoww"))
-        assertEquals("thuơ", engine.process("thuoww"))
-        assertEquals("bươ", engine.process("buoww"))
-        assertEquals("hướng", engine.process("huowwngs"))
+        // Nhánh uo (uơ/ươ): phím w thứ 2 thả literal (uoww -> uơw).
+        assertEquals("uơw", engine.process("uoww"))
+        assertEquals("thuơw", engine.process("thuoww"))
+        assertEquals("bươw", engine.process("buoww"))
+        assertEquals("hươwngs", engine.process("huowwngs"))
     }
 
     @Test

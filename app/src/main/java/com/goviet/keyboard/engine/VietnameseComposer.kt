@@ -357,14 +357,19 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
             // ── Vowel modifier / vowel / consonant ─────────────────
             if (cLow == 'e' || cLow == 'o' || cLow == 'a' || cLow == 'w') {
-                // Second 'w' right after a uo-family w-compound (uơ/ươ) is
-                // absorbed — the map says the toggle cycle is consumed, so it must
-                // not unfold back to "uo"+"w" (huowwngs → hướng).  The ua/oa-family
-                // compounds (ưa/oă) carry no such flag and untoggle normally,
-                // releasing the 'w' as literal text (huawwei → huawei, muaww → muaw).
+                // 'w' after a uo-family w-compound (uơ/ươ): the map says the fold
+                // cannot untoggle, so the repeated key either becomes literal text
+                // when it sits right after the fold key (uoww → uơw) or is
+                // absorbed when the compound was rebuilt through other keys
+                // (uwow → ươ).  The ua/oa-family compounds (ưa/oă) carry no such
+                // flag and untoggle normally (huawwei → huawei).
                 if (cLow == 'w' && !syllableLocked && lastFoldKey == 'w' &&
                     out.nucleus.isNotEmpty() &&
-                    RimeMap.foldWAbsorbSecond(RimeMap.foldSlot(nucKey))) {
+                    RimeMap.foldWRepeatLiteral(RimeMap.foldSlot(nucKey))) {
+                    if (pos > 0 && raw[pos - 1].lowercaseChar() == 'w') {
+                        out.rawSuffix += c
+                        syllableLocked = true; toneLocked = true
+                    }
                     lastFoldKey = '\u0000'
                     pos++; continue
                 }
