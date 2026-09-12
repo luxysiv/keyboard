@@ -89,18 +89,6 @@ object RimeMap {
     // Extend an existing rime key with additional characters without
     // re-encoding the whole string — used in the composer's resegment loop.
 
-    /** Shift existing key left 5 bits and add next character — O(1). */
-    @JvmStatic
-    fun extendKey(prevKey: Int, c: Char): Int = (prevKey shl 5) or charIndex(c)
-
-    /** Remove last character from key (pop) — O(1). */
-    @JvmStatic
-    fun popKey(key: Int): Int {
-        val len = (key ushr 25) - 1
-        val chars = (key and 0x1FFFFFF) ushr 5
-        return (len shl 25) or chars
-    }
-
     // ── Flat map lookup table ─────────────────────────────────────
     //
     // Primitive IntArray+ByteArray tables — zero boxing, zero GC.
@@ -299,7 +287,7 @@ object RimeMap {
                 (wAlt and 0xFFFF) or
                 (if (wPrimaryLA) (1 shl 16) else 0) or
                 (if (wAltLA) (1 shl 17) else 0) or
-                (if (isWCompoundForm(spec.nucleus)) (1 shl 30) else 0)
+                (if (isUoCompoundForm(spec.nucleus)) (1 shl 30) else 0)
 
             for (c in spec.codas) {
                 val rime = spec.nucleus + c
@@ -440,18 +428,6 @@ object RimeMap {
     }
 
     @JvmStatic
-    fun toneNew(key: Int): Int {
-        val i = find(key)
-        return if (i >= 0) (_data[i].toInt() ushr 3) and 3 else 0
-    }
-
-    @JvmStatic
-    fun toneOld(key: Int): Int {
-        val i = find(key)
-        return if (i >= 0) (_data[i].toInt() ushr 5) and 3 else 0
-    }
-
-    @JvmStatic
     fun indexOf(key: Int): Int = find(key)
 
     @JvmStatic
@@ -495,16 +471,6 @@ object RimeMap {
      */
     @JvmStatic
     fun extendKey(baseKey: Int, cs: CharSequence, start: Int, length: Int): Int {
-        var chars = baseKey and 0x1FFFFFF
-        var len = (baseKey ushr 25)
-        var i = start
-        val end = start + length
-        while (i < end) { chars = (chars shl 5) or charIndex(cs[i]); i++; len++ }
-        return (len shl 25) or chars
-    }
-
-    @JvmStatic
-    fun extendKey(baseKey: Int, cs: CharArray, start: Int, length: Int): Int {
         var chars = baseKey and 0x1FFFFFF
         var len = (baseKey ushr 25)
         var i = start
@@ -636,10 +602,11 @@ object RimeMap {
         return 0L
     }
 
-    /** True if [nuc] is a w-compound display form (uơ/ươ/ưa/oă or derivative). */
-    private fun isWCompoundForm(nuc: String): Boolean {
+    /** True if [nuc] is a uo-family w-compound (uơ/ươ or derivative) whose
+     *  repeated 'w' must be absorbed instead of untoggled. */
+    private fun isUoCompoundForm(nuc: String): Boolean {
         val n = nuc.lowercase()
-        return n.contains("ươ") || n.contains("uơ") || n.contains("ưa") || n.contains("oă")
+        return n.contains("ươ") || n.contains("uơ")
     }
 
     /**
@@ -675,9 +642,10 @@ object RimeMap {
     fun foldWPrimaryLookahead(slot: Int): Boolean =
         slot >= 0 && (_foldW[slot] and (1 shl 16)) != 0
 
-    /** True when the nucleus at [slot] is a w-compound display form. */
+    /** True when a repeated 'w' after the w-compound at [slot] is absorbed
+     *  instead of untoggled (uo-family uơ/ươ: huowwngs → hướng, uoww → uơ). */
     @JvmStatic
-    fun isWCompound(slot: Int): Boolean =
+    fun foldWAbsorbSecond(slot: Int): Boolean =
         slot >= 0 && (_foldW[slot] and (1 shl 30)) != 0
 
     /** Position where the fold lands (untoggle anchor). */

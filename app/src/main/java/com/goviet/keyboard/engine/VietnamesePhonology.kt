@@ -110,14 +110,6 @@ object VietnamesePhonology {
     }
 
     /**
-     * Check if a rime formed by concatenating [a] (first [aLen] chars) and [b]
-     * (first [bLen] chars) is a valid prefix.  Zero allocation on the hot path.
-     */
-    fun isValidPrefixCat(a: CharSequence, aLen: Int, b: CharSequence, bLen: Int): Boolean {
-        return RimeMap.isValidPrefix(RimeMap.keyCat(a, aLen, b, bLen))
-    }
-
-    /**
      * Check if [candidate] is a complete valid rime.
      */
     fun isCompleteRime(candidate: CharSequence, start: Int = 0, length: Int = candidate.length - start): Boolean {
@@ -160,12 +152,6 @@ object VietnamesePhonology {
      */
     fun isRimeHashValidForTone(key: Long, tone: Tone): Boolean =
         RimeMap.isToneAllowed(key.toInt(), tone.index)
-
-    /**
-     * Check if a precomputed key is a valid prefix of any Vietnamese rime.
-     * Key is an Int rimeKey from [RimeMap.rimeKey] — passed as Long for backward compatibility.
-     */
-    fun isValidPrefixHash(key: Long): Boolean = RimeMap.isValidPrefix(key.toInt())
 
     /**
      * Determine tone position from a precomputed rime key — zero allocation.

@@ -215,13 +215,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     private fun isFoldKey(c: Char): Boolean = VietnamesePhonology.isFoldKey(c)
 
-    /** True if [nucleus] is a uo-family w-compound (uơ/ươ) — the only w-compound
-     *  forms whose repeated 'w' toggles are absorbed instead of untoggled. */
-    private fun nucHasUoCompound(nucleus: String): Boolean {
-        val n = nucleus.lowercase()
-        return n.contains("ươ") || n.contains("uơ")
-    }
-
     private fun resegment(raw: CharSequence, out: SyllableState) {
         out.reset()
         val len = raw.length
@@ -364,15 +357,14 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
             // ── Vowel modifier / vowel / consonant ─────────────────
             if (cLow == 'e' || cLow == 'o' || cLow == 'a' || cLow == 'w') {
-                // Second 'w' immediately after a uo-family w-compound (uơ/ươ)
-                // is absorbed: the compound fold's toggle cycle is already consumed,
-                // so it must not unfold back to "uo"+"w" (fixes huowwngs → hướng).
-                // The ua/oa-family compounds (ưa/oă) untoggle normally instead,
+                // Second 'w' right after a uo-family w-compound (uơ/ươ) is
+                // absorbed — the map says the toggle cycle is consumed, so it must
+                // not unfold back to "uo"+"w" (huowwngs → hướng).  The ua/oa-family
+                // compounds (ưa/oă) carry no such flag and untoggle normally,
                 // releasing the 'w' as literal text (huawwei → huawei, muaww → muaw).
                 if (cLow == 'w' && !syllableLocked && lastFoldKey == 'w' &&
                     out.nucleus.isNotEmpty() &&
-                    RimeMap.isWCompound(RimeMap.foldSlot(nucKey)) &&
-                    nucHasUoCompound(out.nucleus)) {
+                    RimeMap.foldWAbsorbSecond(RimeMap.foldSlot(nucKey))) {
                     lastFoldKey = '\u0000'
                     pos++; continue
                 }
@@ -385,30 +377,18 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     wOnsetAbsorbed = true
                     pos++; continue
                 }
-                // Standalone w → ư (no onset, no nucleus, directW=OFF)
+                // w → ư when there is no nucleus yet (standalone "w" or after a
+                // consonant onset: sw→sư, dw→dư, lw→lư).  Onset 'w' is excluded —
+                // its repeated w is absorbed by the branch above.  The ư was created
+                // from nothing, so another 'w' cancels it back to raw "tw".
                 if (!options.directW && cLow == 'w' && !syllableLocked &&
-                    out.nucleus.isEmpty() && out.onset.isEmpty()) {
+                    out.nucleus.isEmpty() &&
+                    (out.onset.isEmpty() || out.onset[0].lowercaseChar() != 'w')) {
                     val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
                     out.nucleus = wChar.toString()
                     nucKey = RimeMap.rimeKey(out.nucleus)
                     rimeKey = nucKey
                     lastFoldKey = 'w'; lastFoldNucIdx = 0
-                    standaloneWFold = true
-                    pos++; continue
-                }
-                // w after consonant onset + empty nucleus → create ư
-                // sw→sư, dw→dư, lw→lư (w creates ư nucleus when no vowel yet)
-                if (!options.directW && cLow == 'w' && !syllableLocked &&
-                    out.nucleus.isEmpty() && out.onset.isNotEmpty() &&
-                    out.onset[0].lowercaseChar() != 'w') {
-                    val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
-                    out.nucleus = wChar.toString()
-                    nucKey = RimeMap.rimeKey(out.nucleus)
-                    rimeKey = nucKey
-                    lastFoldKey = 'w'; lastFoldNucIdx = 0
-                    // The ư was created from nothing (like the no-onset case), so
-                    // pressing 'w' again must cancel it back to raw "tw" instead of
-                    // re-folding into an "uw" nucleus.
                     standaloneWFold = true
                     pos++; continue
                 }
@@ -636,35 +616,21 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         fun pickVariant(coda: String): String? {
             val pv = isValidRime(primNuc, coda)
             val av = isValidRime(altNuc, coda)
-            return when {
-                pv && !av -> primNuc
-                av && !pv -> altNuc
-                pv && av -> {
-                    // Both valid standalone — use vowel extension to break tie.
-                    // The correct fold is the one whose compound + following
-                    // vowels forms a valid nucleus prefix (e.g. "Ươ"+"i"="ƯƠI"
-                    // valid vs "uơ"+"i"="uơi" invalid).
-                    val vt = predictVowelTail(raw, rawPos + 1)
-                    if (vt.isNotEmpty()) {
-                        val primExt = primNuc + vt
-                        val altExt = altNuc + vt
-                        val pe = RimeMap.isValidPrefix(RimeMap.keyCat(primExt, primExt.length, out.coda, out.coda.length))
-                        val ae = RimeMap.isValidPrefix(RimeMap.keyCat(altExt, altExt.length, out.coda, out.coda.length))
-                        when {
-                            pe && !ae -> primNuc
-                            ae && !pe -> altNuc
-                            else -> {
-                                val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
-                                if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
-                            }
-                        }
-                    } else {
-                        val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
-                        if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
-                    }
-                }
-                else -> null
+            if (pv != av) return if (pv) primNuc else altNuc
+            if (!pv) return null
+            // Both valid standalone — the vowel extension breaks the tie: the
+            // right fold is the one whose compound + following vowels forms a
+            // valid nucleus prefix ("ươ"+"i"="ươi" valid vs "uơ"+"i" invalid).
+            val vt = predictVowelTail(raw, rawPos + 1)
+            if (vt.isNotEmpty()) {
+                val primKey = RimeMap.keyCat(primNuc, primNuc.length, vt, vt.length)
+                val altKey = RimeMap.keyCat(altNuc, altNuc.length, vt, vt.length)
+                val pe = RimeMap.isValidPrefix(RimeMap.extendKey(primKey, out.coda, 0, out.coda.length))
+                val ae = RimeMap.isValidPrefix(RimeMap.extendKey(altKey, out.coda, 0, out.coda.length))
+                if (pe != ae) return if (pe) primNuc else altNuc
             }
+            val openUoOk = out.onset.isEmpty() || OnsetMap.allowsOpenUo(out.onset)
+            return if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
         }
 
         // Try with the predicted tail first; if both invalid, fall back to
@@ -779,26 +745,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     }
 
     fun compileRaw(raw: CharSequence, vietnamese: Boolean, out: OwnedBuffer) {
-        out.clear()
-        if (raw.length == 0) return
-        if (!vietnamese || !vietnameseModeEnabled) { out.append(raw); return }
-
-        var i = 0
-        while (i < raw.length) {
-            val c = raw[i]
-            if (isBoundaryKey(c)) {
-                out.append(c)
-                replayState.reset()
-                i++
-                continue
-            }
-            val start = i
-            while (i < raw.length && !isBoundaryKey(raw[i])) i++
-            val syllable = raw.subSequence(start, i)
-            resegment(syllable, replayState)
-            out.append(replayState.toDisplayString(options.oldTonePlacement))
-        }
-        replayState.reset()
+        compileRaw(raw, vietnamese, out, Int.MAX_VALUE)
     }
 
     fun compileRaw(raw: CharSequence, vietnamese: Boolean, out: OwnedBuffer, maxLen: Int) {
