@@ -171,9 +171,14 @@ object VietnamesePhonology {
      * Determine tone position from a precomputed rime key — zero allocation.
      * Key is an Int rimeKey from [RimeMap.rimeKey] — passed as Long for backward compatibility.
      */
-    fun determineTonePositionHash(rimeKey: Long, oldTonePlacement: Boolean): Int {
-        val i = RimeMap.indexOf(rimeKey.toInt())
-        if (i < 0) return 0
+    fun determineTonePositionHash(rimeKey: Long, oldTonePlacement: Boolean, nucleusLength: Int = 0): Int {
+        val key = rimeKey.toInt()
+        val i = RimeMap.indexOf(key)
+        // Prefix-only entries (incomplete rimes like "oon" while the coda is still
+        // being typed) carry no meaningful tone data — fall back to the last nucleus
+        // vowel so the mark sits where it will land once the rime completes
+        // (cooosn -> coón, not cóon).
+        if (i < 0 || !RimeMap.isComplete(key)) return (nucleusLength - 1).coerceAtLeast(0)
         return if (oldTonePlacement) RimeMap.toneOldAt(i) else RimeMap.toneNewAt(i)
     }
 

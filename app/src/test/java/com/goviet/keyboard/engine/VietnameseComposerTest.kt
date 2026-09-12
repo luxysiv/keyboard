@@ -419,6 +419,27 @@ class VietnameseComposerTest {
     }
 
     @Test
+    fun testTonePositionTracksFinalRime() {
+        // c h u r a n a -> chuẩn: khi vần còn "ua" + n (phụ âm chưa hợp lệ,
+        // cần fold 'a' để thành uân), dấu hỏi phải nằm trên chữ a chứ không
+        // nhảy về u.  Đồng thời cho phép gõ dấu sau âm cuối: chuanra -> chuẩn.
+        assertEquals("chủ", engine.process("chur"))
+        // ua + hỏi -> dấu trên u là đúng tiếng Việt (chùa, của, chủa).
+        assertEquals("chủa", engine.process("chura"))
+        assertEquals("chuản", engine.process("churan"))
+        assertEquals("chuẩn", engine.process("churana"))
+        assertEquals("chuẩn", engine.process("chuaanr"))
+        assertEquals("chuẩn", engine.process("chuanra"))
+        assertEquals("chùa", engine.process("chuaf"))
+
+        // cooosng: dấu sắc luôn nằm trên o thứ 2 (coón khi gõ n, coóng khi gõ g).
+        assertEquals("coó", engine.process("cooos"))
+        assertEquals("coón", engine.process("cooosn"))
+        assertEquals("coóng", engine.process("cooosng"))
+        assertEquals("coọ", engine.process("coooj"))
+    }
+
+    @Test
     fun testWTransformAndDualRole() {
         assertEquals("ư", engine.process("w"))
         assertEquals("w", engine.process("ww"))
