@@ -91,15 +91,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         private fun pendingFoldCodaIndex(): Int {
             if (nucleus.isEmpty() || coda.isNotEmpty() || rawSuffix.isEmpty()) return -1
             val c0 = rawSuffix[0].lowercaseChar()
-            val codaStart = c0 == 'm' || c0 == 'p' || c0 == 'n' || c0 == 't' || c0 == 'c'
-            if (!codaStart) return -1
-            val slot = RimeMap.foldSlot(RimeMap.rimeKey(nucleus))
-            if (slot < 0) return -1
-            val folds = intArrayOf(
-                RimeMap.foldE(slot), RimeMap.foldO(slot),
-                RimeMap.foldA(slot), RimeMap.foldWPrimary(slot)
-            )
-            for (fold in folds) {
+            if (c0 != 'm' && c0 != 'p' && c0 != 'n' && c0 != 't' && c0 != 'c') return -1
+            val key = RimeMap.rimeKey(nucleus)
+            for (fk in charArrayOf('e', 'o', 'a', 'w')) {
+                val fold = RimeMap.foldPrimary(key, fk)
                 if (fold == 0) continue
                 val folded = RimeMap.applyFold(nucleus, fold)
                 if (folded == nucleus) continue
@@ -186,7 +181,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             // w-fold to pick the open form "uơ" instead of the closed "ươ".
             if (isToneKey(c)) { i++; continue }
             if (RimeMap.isFoldKey(c)) { i++; continue }
-            if (isConsonant(c)) {
+            if (OnsetMap.isConsonant(c)) {
                 if (tailStart < 0) tailStart = i
                 tailEnd = i + 1
                 i++
@@ -416,7 +411,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                             out.rawSuffix += c
                             syllableLocked = true; toneLocked = true
                         } else {
-                            out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, RimeMap.plainOf(out.nucleus[lastFoldNucIdx]))
+                            val sb = StringBuilder(out.nucleus); sb[lastFoldNucIdx] = RimeMap.plainOf(out.nucleus[lastFoldNucIdx]); out.nucleus = sb.toString()
                             if (out.coda.isNotEmpty()) {
                                 // Coda already present: the released fold key cannot
                                 // re-join the nucleus — emit it as literal text after
@@ -471,7 +466,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
 
             // ── Base vowel (not a fold key) → extend nucleus ──────
-            if (!syllableLocked && !isConsonant(cLow) && RimeMap.isBaseVowel(c)) {
+            if (!syllableLocked && !OnsetMap.isConsonant(cLow) && RimeMap.isBaseVowel(c)) {
                 if (out.nucleus.isEmpty()) {
                     // First vowel: start nucleus
                     out.nucleus = c.toString()
@@ -492,7 +487,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
 
             // ── Consonant: try as coda, otherwise literal + lock ───
-            if (!syllableLocked && isConsonant(cLow) && out.nucleus.isNotEmpty()) {
+            if (!syllableLocked && OnsetMap.isConsonant(cLow) && out.nucleus.isNotEmpty()) {
                 // Try as coda — RimeMap is the authority (O(1) flatmap lookup)
                 val codaLen = out.coda.length
                 val codaOk = codaLen < 2
@@ -658,14 +653,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return RimeMap.isValidPrefix(RimeMap.keyCat(nucleus, nucleus.length, coda, coda.length))
     }
 
-    private fun replaceAt(str: String, idx: Int, replacement: Char): String {
-        val arr = CharArray(str.length)
-        str.toCharArray(arr, 0, 0, str.length)
-        arr[idx] = replacement
-        return String(arr, 0, str.length)
-    }
 
-    private fun isConsonant(c: Char): Boolean = OnsetMap.isConsonant(c)
 
     // ================================================================
     // PUBLIC API
