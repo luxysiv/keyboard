@@ -68,7 +68,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 return
             }
             val rimeKey = RimeMap.keyCat(nucleus, nucleus.length, coda, coda.length)
-            var toneIdx = VietnamesePhonology.determineTonePositionHash(
+            var toneIdx = RimeMap.determineTonePositionHash(
                 rimeKey.toLong(), oldTonePlacement, nucleus.length)
             if (coda.isEmpty() && rawSuffix.isNotEmpty()) {
                 val pending = pendingFoldCodaIndex()
@@ -207,13 +207,13 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var i = from
         while (i < raw.length) {
             val c = raw[i].lowercaseChar()
-            if (VietnamesePhonology.isBaseVowel(c)) { sb.append(c); i++ }
+            if (RimeMap.isBaseVowel(c)) { sb.append(c); i++ }
             else break
         }
         return sb.toString()
     }
 
-    private fun isFoldKey(c: Char): Boolean = VietnamesePhonology.isFoldKey(c)
+    private fun isFoldKey(c: Char): Boolean = RimeMap.isFoldKey(c)
 
     private fun resegment(raw: CharSequence, out: SyllableState) {
         out.reset()
@@ -227,7 +227,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         for (onsetLen in maxOnset downTo 1) {
             if (OnsetMap.isValidOnset(raw, 0, onsetLen)) {
                 // Single vowel char at start is NOT a valid onset
-                if (onsetLen == 1 && VietnamesePhonology.isBaseVowel(raw[0])) continue
+                if (onsetLen == 1 && RimeMap.isBaseVowel(raw[0])) continue
                 // When directW is OFF, 'w' at syllable start should fold, not onset
                 if (!options.directW && onsetLen == 1 && raw[0].lowercaseChar() == 'w') continue
                 // Compound onsets ending with a vowel (gi, qu) should only win
@@ -241,7 +241,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (raw[onsetLen - 1].lowercaseChar() == 'i') {
                         var vowelAfter = false
                         for (k in onsetLen until len) {
-                            if (VietnamesePhonology.isBaseVowel(raw[k])) { vowelAfter = true; break }
+                            if (RimeMap.isBaseVowel(raw[k])) { vowelAfter = true; break }
                         }
                         if (!vowelAfter) continue
                     }
@@ -341,7 +341,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         pos++; continue
                     }
                     val rk = rimeKey
-                    if (VietnamesePhonology.isRimeHashValidForTone(rk.toLong(), targetTone)) {
+                    if (RimeMap.isRimeHashValidForTone(rk.toLong(), targetTone)) {
                         out.tone = targetTone
                         lastToneKey = cLow
                         toneLocked = false
@@ -412,13 +412,13 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 if (!syllableLocked && isFoldKey(cLow) && out.nucleus.isNotEmpty() && !justUntoggled) {
                     if (lastFoldKey != '\u0000' && cLow == lastFoldKey &&
                         lastFoldNucIdx >= 0 && lastFoldNucIdx < out.nucleus.length &&
-                        out.nucleus[lastFoldNucIdx] != VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx])) {
+                        out.nucleus[lastFoldNucIdx] != RimeMap.plainOf(out.nucleus[lastFoldNucIdx])) {
                         if (standaloneWFold) {
                             out.nucleus = ""
                             out.rawSuffix += c
                             syllableLocked = true; toneLocked = true
                         } else {
-                            out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx]))
+                            out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, RimeMap.plainOf(out.nucleus[lastFoldNucIdx]))
                             if (out.coda.isNotEmpty()) {
                                 // Coda already present: the released fold key cannot
                                 // re-join the nucleus — emit it as literal text after
@@ -448,7 +448,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 }
                 // Vowel combination
                 if (!syllableLocked && out.nucleus.isNotEmpty() && cLow != 'w') {
-                    val combo = VietnamesePhonology.lookupVowelCombination(out.nucleus, c)
+                    val combo = RimeMap.combineNucleus(out.nucleus, c)
                     if (combo != null) {
                         out.nucleus = combo
                         nucKey = RimeMap.rimeKey(out.nucleus)
@@ -473,7 +473,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
 
             // ── Base vowel (not a fold key) → extend nucleus ──────
-            if (!syllableLocked && !isConsonant(cLow) && VietnamesePhonology.isBaseVowel(c)) {
+            if (!syllableLocked && !isConsonant(cLow) && RimeMap.isBaseVowel(c)) {
                 if (out.nucleus.isEmpty()) {
                     // First vowel: start nucleus
                     out.nucleus = c.toString()
@@ -817,7 +817,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         val nucleusSb = StringBuilder()
         var remIdx = 0
-        while (remIdx < remainingAfterOnset.length && VietnamesePhonology.isBaseVowel(remainingAfterOnset[remIdx])) {
+        while (remIdx < remainingAfterOnset.length && RimeMap.isBaseVowel(remainingAfterOnset[remIdx])) {
             nucleusSb.append(remainingAfterOnset[remIdx]); remIdx++
         }
         var nucleus = nucleusSb.toString()
@@ -834,7 +834,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 remainingAfterOnset = baseWord.substring(onset.length)
                 val nsb = StringBuilder()
                 var ri = 0
-                while (ri < remainingAfterOnset.length && VietnamesePhonology.isBaseVowel(remainingAfterOnset[ri])) {
+                while (ri < remainingAfterOnset.length && RimeMap.isBaseVowel(remainingAfterOnset[ri])) {
                     nsb.append(remainingAfterOnset[ri]); ri++
                 }
                 nucleus = nsb.toString()
@@ -847,11 +847,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var rawSuffix = ""
         if (nucleus.isNotEmpty()) {
             var matchedCoda = false
-            for (cand in VietnamesePhonology.CODAS) {
+            for (cand in RimeMap.CODAS) {
                 if (remLower.startsWith(cand)) {
                     val candidateRime = nucleus.lowercase() + cand
-                    if (VietnamesePhonology.isValidPrefix(candidateRime) &&
-                        VietnamesePhonology.isRimeValidForTone(candidateRime.lowercase(), detectedTone)) {
+                    if (RimeMap.isValidPrefix(RimeMap.rimeKey(candidateRime)) &&
+                        RimeMap.isRimeValidForTone(candidateRime.lowercase(), detectedTone)) {
                         coda = remainingAfterNucleus.substring(0, cand.length)
                         rawSuffix = remainingAfterNucleus.substring(cand.length)
                         matchedCoda = true; break
@@ -863,7 +863,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             rawSuffix = remainingAfterNucleus
         }
 
-        val hasValidRime = nucleus.isNotEmpty() && VietnamesePhonology.isValidRime(nucleus.lowercase() + coda.lowercase())
+        val hasValidRime = nucleus.isNotEmpty() && RimeMap.isValidPrefix(RimeMap.rimeKey(nucleus.lowercase() + coda.lowercase()))
         val validTone = if (hasValidRime) detectedTone else Tone.NONE
         val validSuffix = if (hasValidRime) rawSuffix else (if (detectedTone != Tone.NONE) word.substring(onset.length) else rawSuffix)
 
@@ -871,7 +871,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         val isValidRimeOrPrefix = if (nucleus.isEmpty()) {
             onset.isNotEmpty() && coda.isEmpty()
         } else {
-            VietnamesePhonology.isValidPrefix(rimeKey) && VietnamesePhonology.isRimeValidForTone(rimeKey, validTone)
+            RimeMap.isValidPrefix(RimeMap.rimeKey(rimeKey)) && RimeMap.isRimeValidForTone(rimeKey, validTone)
         }
         val isValid = validSuffix.isEmpty() && isValidRimeOrPrefix
 
@@ -926,10 +926,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         private val displayBuffer = ThreadLocal.withInitial { CharArray(32) }
 
         @JvmStatic
-        fun isToneKey(c: Char): Boolean = VietnamesePhonology.isToneKey(c)
+        fun isToneKey(c: Char): Boolean = RimeMap.isToneKey(c)
 
         @JvmStatic
-        fun isVowelModifierKey(c: Char): Boolean = VietnamesePhonology.isFoldKey(c)
+        fun isVowelModifierKey(c: Char): Boolean = RimeMap.isFoldKey(c)
 
         fun nucleusToRawKeystroke(nucleus: String): String {
             if (nucleus.isEmpty()) return ""

@@ -114,7 +114,7 @@ object EditedVietnameseRecognizer {
         // The rime must be a (possibly partial) canonical Vietnamese rime
         // and must contain at least one base vowel.
         if (!RimeMap.isValidPrefix(RimeMap.rimeKey(rime))) return false
-        return rime.any { VietnamesePhonology.isBaseVowel(it) }
+        return rime.any { RimeMap.isBaseVowel(it) }
     }
 
     fun classify(word: String): CompositionMode {

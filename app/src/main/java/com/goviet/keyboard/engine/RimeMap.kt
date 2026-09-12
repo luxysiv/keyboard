@@ -677,4 +677,123 @@ object RimeMap {
         return String(buf)
     }
 
+
+
+    // ── Vietnamese phonological utilities (formerly in VietnamesePhonology) ──
+
+    /** 12 Vietnamese base vowels (unaccented): a ă â e ê i o ô ơ u ư y. */
+    val BASE_VOWELS = "aăâeêioôơuưy"
+    private val BASE_VOWEL_SET = BooleanArray(512).also { arr ->
+        for (c in BASE_VOWELS) arr[c.code] = true
+    }
+
+    /** Telex tone keys: s(acute), f(grave), r(hook), x(tilde), j(dot), z(clear). */
+    val TONE_KEYS = "sfrxjz"
+    private val TONE_KEY_SET = BooleanArray(512).also { arr ->
+        for (c in TONE_KEYS) arr[c.code] = true
+    }
+
+    /** Telex vowel modifier keys: e/o/a/w. */
+    val VOWEL_MOD_KEYS = "eoaw"
+    private val VOWEL_MOD_SET = BooleanArray(512).also { arr ->
+        for (c in VOWEL_MOD_KEYS) arr[c.code] = true
+    }
+
+    /** Valid Vietnamese coda strings. */
+    val CODAS = arrayOf("ng", "nh", "ch", "m", "p", "n", "t", "c")
+
+    /** True if [c] is one of the 12 base Vietnamese vowels (unaccented). */
+    @JvmStatic
+    fun isBaseVowel(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until 512 && BASE_VOWEL_SET[code]
+    }
+
+    /** Telex tone key — O(1) BooleanArray lookup. */
+    @JvmStatic
+    fun isToneKey(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until 512 && TONE_KEY_SET[code]
+    }
+
+    /** Vowel-modifier/fold key — O(1) BooleanArray lookup. */
+    @JvmStatic
+    fun isFoldKey(c: Char): Boolean {
+        val code = c.lowercaseChar().code
+        return code in 0 until 512 && VOWEL_MOD_SET[code]
+    }
+
+    /** Plain letter that a folded display letter unfolds back to. */
+    @JvmStatic
+    fun plainOf(folded: Char): Char = when (folded) {
+        'ê' -> 'e'; 'ô' -> 'o'; 'ơ' -> 'o'; 'â' -> 'a'; 'ă' -> 'a'; 'ư' -> 'u'; 'đ' -> 'd'
+        else -> folded
+    }
+
+    /** True if the rime is a valid stop-coda rime (c, ch, p, t). */
+    @JvmStatic
+    fun isStopCoda(rime: CharSequence, start: Int = 0, length: Int = rime.length - start): Boolean {
+        if (length == 0) return false
+        return isStop(rimeKey(rime, start, length))
+    }
+
+    /** Validate that a rime string is valid for a specific tone. */
+    @JvmStatic
+    fun isRimeValidForTone(rime: String, tone: Tone): Boolean {
+        if (rime.isEmpty()) return false
+        return isToneAllowed(rimeKey(rime), tone.index)
+    }
+
+    /** Validate that a rime (by precomputed key) is valid for a specific tone. */
+    @JvmStatic
+    fun isRimeHashValidForTone(key: Long, tone: Tone): Boolean =
+        isToneAllowed(key.toInt(), tone.index)
+
+    /** Determine tone position from a precomputed rime key — zero allocation. */
+    @JvmStatic
+    fun determineTonePositionHash(rimeKey: Long, oldTonePlacement: Boolean, nucleusLength: Int = 0): Int {
+        val key = rimeKey.toInt()
+        val i = indexOf(key)
+        if (i < 0 || !isComplete(key)) return (nucleusLength - 1).coerceAtLeast(0)
+        return if (oldTonePlacement) toneOldAt(i) else toneNewAt(i)
+    }
+
+    /**
+     * Determine tone mark position with onset prefix preprocessing (qu/gi).
+     */
+    @JvmStatic
+    fun findTonePosition(onset: CharSequence, rime: CharSequence, oldTonePlacement: Boolean): Int? {
+        val onsetLen = onset.length
+        val rimeLen = rime.length
+        if (rimeLen == 0) return null
+        var rimeStart = 0
+        var offset = 0
+        if (rimeLen > 1 && onsetLen > 0) {
+            val isRimeFirstU = rime[0] == 'u' || rime[0] == 'U'
+            val isRimeFirstI = rime[0] == 'i' || rime[0] == 'I'
+            val isQ = (onset[onsetLen - 1] == 'q' || onset[onsetLen - 1] == 'Q') ||
+                    (onsetLen >= 2 && (onset[onsetLen - 2] == 'q' || onset[onsetLen - 2] == 'Q') && (onset[onsetLen - 1] == 'u' || onset[onsetLen - 1] == 'U'))
+            val isG = (onset[onsetLen - 1] == 'g' || onset[onsetLen - 1] == 'G') ||
+                    (onsetLen >= 2 && (onset[onsetLen - 2] == 'g' || onset[onsetLen - 2] == 'G') && (onset[onsetLen - 1] == 'i' || onset[onsetLen - 1] == 'I'))
+            if (isRimeFirstU && isQ) { rimeStart = 1; offset = 1 }
+            else if (isRimeFirstI && isG) { rimeStart = 1; offset = 1 }
+        }
+        val k = rimeKey(rime, rimeStart, rimeLen - rimeStart)
+        val i = indexOf(k)
+        if (i < 0) return null
+        val basePos = if (oldTonePlacement) toneOldAt(i) else toneNewAt(i)
+        return basePos + offset
+    }
+
+    /**
+     * Get tone position for a rime (no onset preprocessing).
+     */
+    @JvmStatic
+    fun getTonePosition(rime: CharSequence, oldTonePlacement: Boolean, start: Int = 0, length: Int = rime.length - start): Int {
+        if (length == 0) return 0
+        val k = rimeKey(rime, start, length)
+        val i = indexOf(k)
+        if (i < 0) return 0
+        return if (oldTonePlacement) toneOldAt(i) else toneNewAt(i)
+    }
 }
