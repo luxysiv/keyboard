@@ -386,7 +386,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     (out.onset.isEmpty() || out.onset[0].lowercaseChar() != 'w')) {
                     val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
                     val comboOk = out.onset.isEmpty() ||
-                        TokenValidMap.isDisplayPrefixValid((out.onset + wChar).lowercase())
+                        RimeMap.isSyllableDisplayPrefixValid((out.onset + wChar).lowercase())
                     if (comboOk) {
                         out.nucleus = wChar.toString()
                         nucKey = RimeMap.rimeKey(out.nucleus)
