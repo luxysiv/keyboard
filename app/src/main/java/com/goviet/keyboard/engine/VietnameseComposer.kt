@@ -414,7 +414,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 // Vowel combination
                 if (!syllableLocked && out.nucleus.isNotEmpty() && cLow != 'w') {
                     val combo = VietnamesePhonology.lookupVowelCombination(out.nucleus, c)
-                    if (combo != null && transformContinuationOk(c, raw, pos, combo, out)) {
+                    if (combo != null) {
                         out.nucleus = combo
                         nucKey = RimeMap.rimeKey(out.nucleus)
                         rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
@@ -545,7 +545,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 if (tail.isNotEmpty()) ok = isValidRime(newNuc, out.coda + tail)
             }
             if (!ok) return -1
-            if (!transformContinuationOk(c, raw, rawPos, newNuc, out)) return -1
             out.nucleus = newNuc
             return RimeMap.foldPos(primary)
         }
@@ -607,60 +606,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     private fun isValidRime(nucleus: String, coda: String): Boolean {
         return RimeMap.isValidPrefix(RimeMap.keyCat(nucleus, nucleus.length, coda, coda.length))
-    }
-
-    /**
-     * Lookahead gate for single-target folds.  A fold is applied only when the
-     * remaining raw can still grow into a valid Vietnamese syllable:
-     *  - nothing remains after the fold key → always ok (the word is complete);
-     *  - the same fold key follows → user is about to untoggle (echo) → keep fold;
-     *  - a tone key follows → tone completes the syllable → keep fold;
-     *  - a different fold key follows → it transforms the preview nucleus
-     *    (ư + o → ươ) before any coda arrives, so simulate that transform;
-     *  - otherwise the predicted consonant tail must extend the rime to a valid
-     *    coda — a plain consonant that collides with the existing coda means a
-     *    foreign word boundary (ban+ana → bânna), so the fold is rejected and
-     *    the key stays literal.
-     */
-    private fun transformContinuationOk(foldKey: Char, raw: CharSequence, rawPos: Int, newNuc: String, out: SyllableState): Boolean {
-        if (rawPos + 1 >= raw.length) return true
-        val next = raw[rawPos + 1].lowercaseChar()
-        if (next == foldKey.lowercaseChar()) return true
-        if (isToneKey(next)) return true
-
-        // Fold keys between the current key and the first consonant transform
-        // the preview nucleus (muwop: w folds u→ư, then o folds ư→ươ, then p is
-        // a valid coda of ươ).  Apply each leading fold key before judging the tail.
-        var previewNuc = newNuc
-        var from = rawPos + 1
-        while (from < raw.length && isFoldKey(raw[from].lowercaseChar())) {
-            val k = raw[from].lowercaseChar()
-            val slot = RimeMap.foldSlot(RimeMap.rimeKey(previewNuc))
-            val primary = foldPrimaryForSlot(slot, k)
-            val transformed = if (primary != 0) {
-                RimeMap.applyFold(previewNuc, primary)
-            } else {
-                RimeMap.combineNucleus(previewNuc, k) ?: break
-            }
-            previewNuc = transformed
-            from++
-        }
-        if (from >= raw.length) return true
-
-        val tail = predictConsonantTail(raw, from)
-        if (tail.isEmpty()) return true
-        if (out.coda.isEmpty()) {
-            // No coda yet: the tail supplies it — any valid prefix of the tail
-            // (ân from ânm in "aanm") means the fold can land and the remaining
-            // consonants fall out as literals.
-            for (len in tail.length downTo 1) {
-                if (isValidRime(previewNuc, tail.substring(0, len))) return true
-            }
-            return false
-        }
-        // Coda already present: the tail must extend it into a valid rime
-        // (ân+ng ok, ân+n is not — "banana" must stay literal).
-        return isValidRime(previewNuc, out.coda + tail)
     }
 
     private fun replaceAt(str: String, idx: Int, replacement: Char): String {

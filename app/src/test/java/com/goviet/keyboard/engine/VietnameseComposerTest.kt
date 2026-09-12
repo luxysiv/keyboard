@@ -134,9 +134,11 @@ class VietnameseComposerTest {
         // banaan -> banan (fold key nhả literal khi đã có âm cuối)
         assertEquals("banan", engine.process("banaan"))
 
-        // banana -> banana (fold â bị chặn khi phần còn lại không tạo vần hợp lệ)
-        assertEquals("banana", engine.process("banana"))
-        assertEquals("bananas", engine.process("bananas"))
+        // Cách gõ đúng "banana": b a n a a n a (fold rồi hủy rồi gõ tiếp)
+        assertEquals("banana", engine.process("banaana"))
+
+        // Gõ sai cách b a n a n a: không hủy fold -> bânna (không phải banana)
+        assertEquals("bânna", engine.process("banana"))
     }
 
     @Test
@@ -1242,6 +1244,9 @@ class VietnameseComposerTest {
         assertEquals("tối", engine.process("toois"))
         assertEquals("đoànk", engine.process("ddoanfk"))
         assertEquals("họct", engine.process("hocjt"))
+
+        // "software" gõ đúng: s o f f t w a r e (f lần 2 hủy dấu huyền của "sò")
+        assertEquals("software", engine.process("sofftware"))
     }
 
     @Test
