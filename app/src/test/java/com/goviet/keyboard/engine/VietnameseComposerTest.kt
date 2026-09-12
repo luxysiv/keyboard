@@ -130,6 +130,13 @@ class VietnameseComposerTest {
 
         // banaa -> bana
         assertEquals("bana", engine.process("banaa"))
+
+        // banaan -> banan (fold key nhả literal khi đã có âm cuối)
+        assertEquals("banan", engine.process("banaan"))
+
+        // banana -> banana (fold â bị chặn khi phần còn lại không tạo vần hợp lệ)
+        assertEquals("banana", engine.process("banana"))
+        assertEquals("bananas", engine.process("bananas"))
     }
 
     @Test
@@ -1223,6 +1230,18 @@ class VietnameseComposerTest {
     fun testBackspaceOnCommittedTextDoesNotMorphLetters() {
         // Typing rossino: r o s -> ró, s -> ros, i -> rosi, n -> rosin, o -> rosino
         assertEquals("rosino", engine.process("rossino"))
+    }
+
+    @Test
+    fun testNoRevertToRawAfterComposedVietnamese() {
+        // tesst: t e s -> té, s hủy dấu -> tes, t -> test (không còn tesst)
+        assertEquals("test", engine.process("tesst"))
+        // rossino: hủy dấu sắc bằng s thứ hai rồi gõ tiếp
+        assertEquals("rosino", engine.process("rossino"))
+        // ký tự lạ sau âm tiết hợp lệ: giữ kết quả tiếng Việt, không lùi về raw
+        assertEquals("tối", engine.process("toois"))
+        assertEquals("đoànk", engine.process("ddoanfk"))
+        assertEquals("họct", engine.process("hocjt"))
     }
 
     @Test

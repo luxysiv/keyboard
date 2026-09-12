@@ -362,7 +362,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     nucKey = RimeMap.rimeKey(out.nucleus)
                     rimeKey = nucKey
                     lastFoldKey = 'w'; lastFoldNucIdx = 0
-                    standaloneWFold = false
+                    // The ư was created from nothing (like the no-onset case), so
+                    // pressing 'w' again must cancel it back to raw "tw" instead of
+                    // re-folding into an "uw" nucleus.
+                    standaloneWFold = true
                     pos++; continue
                 }
 
@@ -381,7 +384,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                             syllableLocked = true; toneLocked = true
                         } else {
                             out.nucleus = replaceAt(out.nucleus, lastFoldNucIdx, VietnamesePhonology.plainOf(out.nucleus[lastFoldNucIdx]))
-                            out.nucleus += c
+                            if (out.coda.isNotEmpty()) {
+                                // Coda already present: the released fold key cannot
+                                // re-join the nucleus — emit it as literal text after
+                                // the valid syllable (banaan -> bana + n = banan).
+                                out.rawSuffix += c
+                                syllableLocked = true; toneLocked = true
+                            } else {
+                                out.nucleus += c
+                            }
                         }
                         lastFoldKey = '\u0000'; lastFoldNucIdx = -1
                         nucKey = if (out.nucleus.isEmpty()) 0 else RimeMap.rimeKey(out.nucleus)
@@ -403,7 +414,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 // Vowel combination
                 if (!syllableLocked && out.nucleus.isNotEmpty() && cLow != 'w') {
                     val combo = VietnamesePhonology.lookupVowelCombination(out.nucleus, c)
-                    if (combo != null) {
+                    if (combo != null && transformContinuationOk(c, raw, pos, combo, out)) {
                         out.nucleus = combo
                         nucKey = RimeMap.rimeKey(out.nucleus)
                         rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
@@ -492,31 +503,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             out.rawSuffix += c; syllableLocked = true; toneLocked = true; pos++
         }
 
-        // Prefix-freeze: revert to raw literal when the rime (nucleus+coda+
-        // rawSuffix) is not a valid corpus prefix and rawSuffix contains
-        // consonants.  Two modes:
-        //  - If the raw has NO space/boundary before the invalid part
-        //    (foreign word being typed): reset to raw to prevent garbling.
-        //  - If there IS a space (valid syllable followed by junk):
-        //    just lock the syllable — do NOT destroy already-valid output.
-        if (out.rawSuffix.length > 1 && hasConsonantInSuffix(out.rawSuffix)) {
-            val rimeDisplay = buildString {
-                append(out.nucleus); append(out.coda); append(out.rawSuffix)
-            }
-            if (!TokenValidMap.isDisplayPrefixValid(rimeDisplay)) {
-                // If the rawSuffix itself contains a space, the valid part
-                // (onset+nucleus+coda) was derived before that space — preserve it.
-                val hasSpaceBefore = out.rawSuffix.contains(' ')
-                if (!hasSpaceBefore) {
-                    // Foreign word: reset to raw to prevent garbling
-                    out.reset()
-                    out.rawSuffix = raw.toString()
-                } else {
-                    // Valid syllable + trailing junk: lock, don't destroy
-                    syllableLocked = true; toneLocked = true
-                }
-            }
-        }
+        // Prefix-freeze: never revert already-composed Vietnamese back to raw
+        // text.  When rawSuffix collects genuine consonants, the syllable is
+        // simply locked; subsequent keys append literally on top of the
+        // composed output (invalid input becomes literal without destroying
+        // valid output).
 
     }
 
@@ -554,6 +545,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 if (tail.isNotEmpty()) ok = isValidRime(newNuc, out.coda + tail)
             }
             if (!ok) return -1
+            if (!transformContinuationOk(c, raw, rawPos, newNuc, out)) return -1
             out.nucleus = newNuc
             return RimeMap.foldPos(primary)
         }
@@ -618,18 +610,57 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     }
 
     /**
-     * Check if rawSuffix contains a consonant that is NOT a fold/tone key.
-     * Fold keys (e/o/a/w/d) and tone keys (s/f/r/x/j/z) can appear in
-     * rawSuffix from untoggle/cancel without indicating foreign text.
-     * Only genuine consonants (b/c/ch/g/h/k/l/m/n/ng/nh/p/t/th/tr/v)
-     * in rawSuffix indicate the text is likely foreign → trigger prefix-freeze.
+     * Lookahead gate for single-target folds.  A fold is applied only when the
+     * remaining raw can still grow into a valid Vietnamese syllable:
+     *  - nothing remains after the fold key → always ok (the word is complete);
+     *  - the same fold key follows → user is about to untoggle (echo) → keep fold;
+     *  - a tone key follows → tone completes the syllable → keep fold;
+     *  - a different fold key follows → it transforms the preview nucleus
+     *    (ư + o → ươ) before any coda arrives, so simulate that transform;
+     *  - otherwise the predicted consonant tail must extend the rime to a valid
+     *    coda — a plain consonant that collides with the existing coda means a
+     *    foreign word boundary (ban+ana → bânna), so the fold is rejected and
+     *    the key stays literal.
      */
-    private fun hasConsonantInSuffix(suffix: String): Boolean {
-        for (i in suffix.indices) {
-            val c = suffix[i].lowercaseChar()
-            if (isConsonant(c) && !isToneKey(c) && !isFoldKey(c) && c != 'd') return true
+    private fun transformContinuationOk(foldKey: Char, raw: CharSequence, rawPos: Int, newNuc: String, out: SyllableState): Boolean {
+        if (rawPos + 1 >= raw.length) return true
+        val next = raw[rawPos + 1].lowercaseChar()
+        if (next == foldKey.lowercaseChar()) return true
+        if (isToneKey(next)) return true
+
+        // Fold keys between the current key and the first consonant transform
+        // the preview nucleus (muwop: w folds u→ư, then o folds ư→ươ, then p is
+        // a valid coda of ươ).  Apply each leading fold key before judging the tail.
+        var previewNuc = newNuc
+        var from = rawPos + 1
+        while (from < raw.length && isFoldKey(raw[from].lowercaseChar())) {
+            val k = raw[from].lowercaseChar()
+            val slot = RimeMap.foldSlot(RimeMap.rimeKey(previewNuc))
+            val primary = foldPrimaryForSlot(slot, k)
+            val transformed = if (primary != 0) {
+                RimeMap.applyFold(previewNuc, primary)
+            } else {
+                RimeMap.combineNucleus(previewNuc, k) ?: break
+            }
+            previewNuc = transformed
+            from++
         }
-        return false
+        if (from >= raw.length) return true
+
+        val tail = predictConsonantTail(raw, from)
+        if (tail.isEmpty()) return true
+        if (out.coda.isEmpty()) {
+            // No coda yet: the tail supplies it — any valid prefix of the tail
+            // (ân from ânm in "aanm") means the fold can land and the remaining
+            // consonants fall out as literals.
+            for (len in tail.length downTo 1) {
+                if (isValidRime(previewNuc, tail.substring(0, len))) return true
+            }
+            return false
+        }
+        // Coda already present: the tail must extend it into a valid rime
+        // (ân+ng ok, ân+n is not — "banana" must stay literal).
+        return isValidRime(previewNuc, out.coda + tail)
     }
 
     private fun replaceAt(str: String, idx: Int, replacement: Char): String {
