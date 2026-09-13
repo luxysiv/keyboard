@@ -717,25 +717,17 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // keystroke. The surviving display is re-adopted to canonical Telex raw
         // when it round-trips exactly; otherwise it is locked as literal text so
         // the survivor can never silently re-transform (word-edit mode).
+        // Same single path used by IME display edits: adoptRoundTrip +
+        // setComposingRaw (resegment for Vietnamese, rawSuffix for literal).
         val start = GraphemeEditor.previousBoundary(display, display.length)
         if (start <= 0) {
             processRaw.clear(); processState.reset()
             return ""
         }
-        val newDisplay = display.substring(0, start)
-        val canonical = adoptRoundTrip(newDisplay)
-        if (canonical != null) {
-            isVietnamese = true
-            processRaw.setLength(0)
-            processRaw.append(canonical)
-            resegment(processRaw, processState)
-        } else {
-            isVietnamese = false
-            processRaw.setLength(0)
-            processRaw.append(newDisplay)
-            processState.reset()
-            processState.rawSuffix = newDisplay
-        }
+        val survivor = display.substring(0, start)
+        val canonical = adoptRoundTrip(survivor)
+        isVietnamese = canonical != null
+        setComposingRaw(canonical ?: survivor)
         return processState.toDisplayString(options.oldTonePlacement)
     }
 
