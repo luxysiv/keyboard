@@ -1067,6 +1067,24 @@ class VietnameseComposerTest {
     }
 
     @Test
+    fun testAdoptRoundTripSharedGate() {
+        // Valid Vietnamese display -> canonical Telex raw (the single adoption gate
+        // shared by backspace / display edits / prefix adoption / mid-word resume).
+        assertEquals("toan", engine.adoptRoundTrip("toan"))
+        assertEquals("toas", engine.adoptRoundTrip("toá")) // toá
+        // Foreign words that cannot round-trip -> null (callers fall back to literal).
+        assertEquals(true, engine.adoptRoundTrip("confirm") == null)
+        assertEquals(true, engine.adoptRoundTrip("warm") == null)
+        assertEquals(true, engine.adoptRoundTrip("simple") == null)
+        // The AdoptResult-based gate mirrors the same decision.
+        assertEquals("toan", engine.canonicalRawIfRoundTrips(engine.adoptWord("toan"), "toan"))
+        assertEquals(true, engine.canonicalRawIfRoundTrips(engine.adoptWord("confirm"), "confirm") == null)
+        // reDerive is identity by contract.
+        assertEquals("warm", engine.reDerive("warm"))
+        assertEquals("keep", engine.reDerive("keep"))
+    }
+
+    @Test
     fun testEnglishSafety() {
         assertEquals("vietnamese", engine.process("vietnamese"))
     }

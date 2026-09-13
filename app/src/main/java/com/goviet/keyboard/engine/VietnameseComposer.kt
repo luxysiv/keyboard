@@ -305,7 +305,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             //    so every w-special rule lives in exactly one place.
             if (cLow == 'e' || cLow == 'o' || cLow == 'a' || cLow == 'w') {
                 pos = if (cLow == 'w') handleWKey(raw, c, pos, out, ctx)
-                      else handleModifierKey(raw, c, cLow, pos, out, ctx)
+                      else applyModifierFold(raw, c, cLow, pos, out, ctx)
                 continue
             }
 
@@ -430,10 +430,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return applyModifierFold(raw, c, 'w', pos, out, ctx)
     }
 
-    /** Modifier/fold-key handler (e/o/a) — shared fold rules; 'w' goes to [handleWKey]. */
-    private fun handleModifierKey(raw: CharSequence, c: Char, cLow: Char, pos: Int, out: SyllableState, ctx: ScanCtx): Int =
-        applyModifierFold(raw, c, cLow, pos, out, ctx)
-
     /**
      * Shared modifier machinery — untoggle-first fold, vowel combination, plain
      * extend, literal fallback.  Always consumes the key (returns new pos).
@@ -544,7 +540,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (out.coda.isEmpty() && pos + 1 < len) {
                 val nextChar = raw[pos + 1].lowercaseChar()
                 if (RimeMap.isFoldKey(nextChar)) {
-                    val fold = foldPrimaryForSlot(RimeMap.foldSlot(ctx.nucKey), nextChar)
+                    val fold = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), nextChar)
                     if (fold != 0) {
                         val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
                         if (foldedNuc != out.nucleus) {
@@ -569,7 +565,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (RimeMap.isFoldKey(foldKey)) {
                         val targetTone = Tone.fromKey(toneKey)
                         if (targetTone != null && targetTone != Tone.NONE) {
-                            val fold = foldPrimaryForSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
+                            val fold = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
                             if (fold != 0) {
                                 val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
                                 if (foldedNuc != out.nucleus) {
@@ -598,10 +594,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return 1
     }
 
-    /** Primary fold code for [foldKey] on a nucleus slot — single dispatch in RimeMap. */
-    private fun foldPrimaryForSlot(slot: Int, foldKey: Char): Int =
-        RimeMap.foldPrimaryAtSlot(slot, foldKey)
-
     /**
      * Apply the Telex fold for [c] by reading the fold-target data baked into
      * [RimeMap] for the current nucleus — no per-rule if/else, no hardcoded
@@ -612,7 +604,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         val nuc = out.nucleus
         val slot = RimeMap.foldSlot(nucKey)
         if (slot < 0) return -1
-        val primary = foldPrimaryForSlot(slot, c)
+        val primary = RimeMap.foldPrimaryAtSlot(slot, c)
         if (primary == 0) return -1
         val alt = if (c == 'w') RimeMap.foldWAlt(slot) else 0
 
@@ -747,12 +739,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             return ""
         }
         val newDisplay = display.substring(0, start)
-        val adopt = adoptWord(newDisplay)
-        val roundTrip = adopt != null && adopt.isValid && process(adopt.canonicalRaw) == newDisplay
-        if (roundTrip) {
+        val canonical = adoptRoundTrip(newDisplay)
+        if (canonical != null) {
             isVietnamese = true
             processRaw.setLength(0)
-            processRaw.append(adopt!!.canonicalRaw)
+            processRaw.append(canonical)
             resegment(processRaw, processState)
         } else {
             isVietnamese = false
@@ -764,22 +755,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return processState.toDisplayString(options.oldTonePlacement)
     }
 
-    fun reDerive(text: String): String {
-        if (text.isEmpty()) return ""
-        val buf = OwnedBuffer()
-        val tempState = SyllableState()
-        for (c in text) {
-            if (c == ' ' || c == '\n' || c == '\t') {
-                tempState.toDisplayBuffer(buf, options.oldTonePlacement)
-                buf.append(c)
-                tempState.reset()
-            } else {
-                tempState.rawSuffix += c
-            }
-        }
-        tempState.toDisplayBuffer(buf, options.oldTonePlacement)
-        return buf.toStringVal()
-    }
+    /**
+     * Preserves [text] verbatim — Telex raw keys are only ever transformed by
+     * [resegment]; a literal re-derive is identity by definition.
+     */
+    fun reDerive(text: String): String = text
 
     // ================================================================
     // REPLAY / COMPILE
@@ -835,15 +815,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         val baseWord = untonedChars.toString()
         val baseLower = baseWord.lowercase()
 
-        var onset = ""
-        var remainingAfterOnset = baseWord
-        for (onsetLen in minOf(3, baseLower.length) downTo 1) {
-            if (OnsetMap.isCompleteOnset(baseLower, 0, onsetLen)) {
-                onset = baseWord.substring(0, onsetLen)
-                remainingAfterOnset = baseWord.substring(onsetLen)
-                break
-            }
-        }
+        val onsetLen = OnsetMap.longestOnsetPrefix(baseLower)
+        var onset = if (onsetLen > 0) baseWord.substring(0, onsetLen) else ""
+        var remainingAfterOnset = baseWord.substring(onsetLen)
 
         val nucleusSb = StringBuilder()
         var remIdx = 0
@@ -921,6 +895,22 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
         return AdoptResult(isValid, onset.length, canonicalRaw)
     }
+
+    /**
+     * Canonical Telex raw for [adopt] when the word round-trips exactly through
+     * the Telex kernel; null otherwise.  Shared by every adopt path (composer
+     * backspace, IME display edits, prefix adoption, mid-word resume) so the
+     * "adopt iff replay == display" decision lives in exactly one place.
+     */
+    fun canonicalRawIfRoundTrips(adopt: AdoptResult?, display: String): String? {
+        if (adopt == null || !adopt.isValid) return null
+        val canonical = adopt.canonicalRaw
+        return if (process(canonical) == display) canonical else null
+    }
+
+    /** [adoptWord] + round-trip gate in one call — null when not adoptable. */
+    fun adoptRoundTrip(display: String): String? =
+        canonicalRawIfRoundTrips(adoptWord(display), display)
 
     // ================================================================
     // PUBLIC: process / processString

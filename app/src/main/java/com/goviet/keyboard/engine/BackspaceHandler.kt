@@ -33,15 +33,8 @@ object EditedVietnameseRecognizer {
         val stripped = VietnameseUnicode.stripToneFromWord(lower)
         if (stripped.isEmpty()) return false
 
-        // Longest valid onset wins (ONSETS is ordered longest-first).
-        var onsetLen = 0
-        for (cand in OnsetMap.ALL_ONSETS) {
-            if (stripped.startsWith(cand)) {
-                onsetLen = cand.length
-                break
-            }
-        }
-
+        // Longest valid onset wins — single source: OnsetMap.longestOnsetPrefix.
+        val onsetLen = OnsetMap.longestOnsetPrefix(stripped)
         val rime = stripped.substring(onsetLen)
         if (rime.isEmpty()) return false
 
@@ -232,15 +225,13 @@ class BackspaceHandler(
             return
         }
 
-        val adopt = controller.inputEngine.adoptWord(display)
-        val useVietnamese = adopt != null && adopt.isValid &&
-                controller.compileText(adopt.canonicalRaw) == display
-        val canonical = if (useVietnamese) adopt!!.canonicalRaw else display
+        val canonical = controller.inputEngine.adoptRoundTrip(display)
+        val useVietnamese = canonical != null
 
         controller.inputEngine.isVietnamese = useVietnamese
-        controller.inputEngine.setComposingRaw(canonical)
+        controller.inputEngine.setComposingRaw(canonical ?: display)
         controller.composingCursorIndex = controller.rawIndexOfDisplay(
-            canonical, display, caretInDisplay, useVietnamese
+            canonical ?: display, display, caretInDisplay, useVietnamese
         )
 
         replaceComposingText(ic, display)

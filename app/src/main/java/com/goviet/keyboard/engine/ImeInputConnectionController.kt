@@ -323,14 +323,12 @@ class ImeInputConnectionController(
         // The whole word must look Vietnamese (e.g. "thay"/"thấy"); foreign words
         // like "confirm" must never be converted to a Telex preedit.
         if (!EditedVietnameseRecognizer.canRecompose(word.text)) return
-        val adopt = inputEngine.adoptWord(prefix) ?: return
-        if (!adopt.isValid) return
-        if (compileText(adopt.canonicalRaw) != prefix) return
+        val canonical = inputEngine.adoptRoundTrip(prefix) ?: return
 
         composingStartInEditor = word.startInEditor
         inputEngine.isVietnamese = true
-        inputEngine.setComposingRaw(adopt.canonicalRaw)
-        composingCursorIndex = adopt.canonicalRaw.length
+        inputEngine.setComposingRaw(canonical)
+        composingCursorIndex = canonical.length
         lastSetComposingText = prefix
         // announceRegion registers the caret AND updates the editor in one step, so the
         // reflection of our own setComposingRegion is consumed as ours instead of being
@@ -342,15 +340,6 @@ class ImeInputConnectionController(
         userMovedCursor = false
     }
 
-    fun mapDisplayOffsetToRawCursor(raw: String, display: String, displayOffset: Int): Int {
-        if (displayOffset <= 0 || raw.isEmpty()) return 0
-        if (displayOffset >= display.length) return raw.length
-        return displayOffset.coerceAtMost(raw.length)
-    }
-
-    data class ImeCommitRecord(val word: String, val timestamp: Long)
-    private var lastImeCommit: ImeCommitRecord? = null
-
     data class MacroExpansionRecord(val trigger: String, val expandedText: String, val timestamp: Long)
     var lastExpandedMacro: MacroExpansionRecord? = null
 
@@ -358,11 +347,7 @@ class ImeInputConnectionController(
     private fun recordImeCommit(word: String) {
         val trimmed = word.trim()
         if (trimmed.isNotEmpty()) {
-            lastImeCommit = ImeCommitRecord(
-                word = VietnameseUnicode.normalizeNfc(trimmed),
-                timestamp = System.currentTimeMillis()
-            )
-            service.lastCommittedWord = trimmed
+            service.lastCommittedWord = VietnameseUnicode.normalizeNfc(trimmed)
         }
     }
 
@@ -508,14 +493,12 @@ class ImeInputConnectionController(
                 (wordAtCursor.endInEditor - wordAtCursor.startInEditor) == wordAtCursor.text.length
 
         if (shouldAdopt && regionValid) {
-            val canonicalRaw = adoptResult!!.canonicalRaw
             // Gate adoption by round-trip: the canonical keystrokes must replay to the
             // exact committed word through the same compile path. If not, start fresh —
             // the committed word stays untouched and the next keystroke begins a new
             // syllable, never a divergent interpretation.
-            displayBuf.clear()
-            inputEngine.compileRaw(canonicalRaw, vietnamese = true, displayBuf)
-            if (displayBuf.toStringVal() != adoptTarget) {
+            val canonicalRaw = inputEngine.canonicalRawIfRoundTrips(adoptResult, adoptTarget)
+            if (canonicalRaw == null) {
                 inputEngine.isVietnamese = true
                 userMovedCursor = false
                 return
@@ -524,7 +507,7 @@ class ImeInputConnectionController(
             inputEngine.isVietnamese = true
             inputEngine.setComposingRaw(canonicalRaw)
             composingCursorIndex = canonicalRaw.length
-            lastSetComposingText = displayBuf.toStringVal()
+            lastSetComposingText = adoptTarget
             selectionGuard.announceRegion(
                 ic,
                 wordAtCursor.startInEditor,

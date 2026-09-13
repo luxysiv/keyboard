@@ -49,10 +49,8 @@ object OnsetMap {
     // ── Hash table ────────────────────────────────────────────────
     private const val TABLE_BITS = 11
     private const val TABLE_SIZE = 1 shl TABLE_BITS
-    private const val TABLE_MASK = TABLE_SIZE - 1
 
-    private lateinit var _keys: IntArray
-    private lateinit var _data: ByteArray
+    private val table = IntFlatTable(TABLE_BITS)
     private lateinit var _fold: ByteArray
     private lateinit var _foldKey: CharArray  // reverse: fold-result slot → fold key
     private lateinit var _foldKeySet: BooleanArray  // fast pre-check: chars that have fold data
@@ -69,25 +67,23 @@ object OnsetMap {
     init { build() }
 
     private fun build() {
-        _keys = IntArray(TABLE_SIZE)
-        _data = ByteArray(TABLE_SIZE)
         _fold = ByteArray(TABLE_SIZE)
         _foldKey = CharArray(TABLE_SIZE)
         _foldKeySet = BooleanArray(512)
         // Insert all complete onsets (NO prefix entries for single chars
         // like 'q' — those are handled by isConsonant).
-        for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
+        for (o in ALL_ONSETS) table.insertOr(onsetKey(o), 0x01)
         // Onsets after which the open rime "uơ" is real (list derived from the
         // actual words containing the rime "uơ": huơ, thuở, khuơ, quơ, luơ).
         val openUoOnsets = arrayOf("h", "th", "kh", "qu", "l")
-        for (o in openUoOnsets) insertOr(onsetKey(o), 0x04)
+        for (o in openUoOnsets) table.insertOr(onsetKey(o), 0x04)
         // Fold target: plain 'd' onset + 'd' → 'đ' (the fold/untoggle cycle is
         // the SAME mechanism as the nucleus folds — data on the map value).
-        val dSlot = find(onsetKey("d"))
+        val dSlot = table.find(onsetKey("d"))
         if (dSlot >= 0) {
             _fold[dSlot] = foldCode(0, 'đ').toByte()
             // Record reverse: đ's slot maps back to fold key 'd'
-            val foldedSlot = find(onsetKey("đ"))
+            val foldedSlot = table.find(onsetKey("đ"))
             if (foldedSlot >= 0) _foldKey[foldedSlot] = 'd'
             // Data-driven: 'd' is the only onset fold key today.
             _foldKeySet['d'.code] = true
@@ -109,27 +105,19 @@ object OnsetMap {
     private fun foldCode(pos: Int, to: Char): Int =
         (pos and 7) or (charIndex(to) shl 3)
 
-    private fun insertOr(key: Int, data: Int) {
-        var slot = (key * -0x61c88647).toInt() and TABLE_MASK
-        while (true) {
-            if (_keys[slot] == key) { _data[slot] = (_data[slot].toInt() or data).toByte(); return }
-            if (_keys[slot] == 0) { _keys[slot] = key; _data[slot] = data.toByte(); return }
-            slot = (slot + 1) and TABLE_MASK
-        }
-    }
-
-    private fun find(key: Int): Int {
-        var i = (key * -0x61c88647).toInt() and TABLE_MASK
-        while (true) {
-            if (_keys[i] == key) return i
-            if (_keys[i] == 0) return -1
-            i = (i + 1) and TABLE_MASK
-        }
-    }
-
     /** Valid onset or prefix of one (for composition: 't' passes because 'th'/'tr' exist). */
     fun isValidOnset(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean =
-        length == 0 || find(onsetKey(onset, start, length)) >= 0
+        length == 0 || isCompleteOnset(onset, start, length)
+
+    /** Longest complete onset prefix of [cs] starting at [start]; 0 when none. */
+    @JvmStatic
+    fun longestOnsetPrefix(cs: CharSequence, start: Int = 0, length: Int = cs.length - start): Int {
+        val max = minOf(3, length)
+        for (len in max downTo 1) {
+            if (isCompleteOnset(cs, start, len)) return len
+        }
+        return 0
+    }
 
     // Single-char check that combines "valid onset" + "first char of a compound"
     // into ONE BooleanArray(512) lookup — hot path in the composer loop.
@@ -159,7 +147,7 @@ object OnsetMap {
     @JvmStatic
     fun foldTarget(onsetKey: Int, foldKey: Char): Int {
         if (foldKey.lowercaseChar() != 'd') return 0
-        val slot = find(onsetKey)
+        val slot = table.find(onsetKey)
         return if (slot < 0) 0 else _fold[slot].toInt()
     }
 
@@ -182,7 +170,7 @@ object OnsetMap {
      */
     @JvmStatic
     fun foldKeyForTarget(onsetKey: Int): Char {
-        val slot = find(onsetKey)
+        val slot = table.find(onsetKey)
         return if (slot < 0) '\u0000' else _foldKey[slot]
     }
 
@@ -202,8 +190,8 @@ object OnsetMap {
     /** Complete valid onset (not just a prefix). */
     fun isCompleteOnset(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean {
         if (length == 0) return false
-        val i = find(onsetKey(onset, start, length))
-        return i >= 0 && (_data[i].toInt() and 1) != 0
+        val i = table.find(onsetKey(onset, start, length))
+        return i >= 0 && (table.data[i].toInt() and 1) != 0
     }
 
     /**
@@ -212,7 +200,7 @@ object OnsetMap {
      */
     fun allowsOpenUo(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean {
         if (length == 0) return true
-        val i = find(onsetKey(onset, start, length))
-        return i >= 0 && (_data[i].toInt() and 4) != 0
+        val i = table.find(onsetKey(onset, start, length))
+        return i >= 0 && (table.data[i].toInt() and 4) != 0
     }
 }

@@ -85,10 +85,9 @@ object RimeMap {
 
     private const val TABLE_BITS = 14
     private const val TABLE_SIZE = 1 shl TABLE_BITS   // 16384 slots
-    private const val TABLE_MASK = TABLE_SIZE - 1
+    private const val TABLE_MASK = TABLE_SIZE - 1     // syllable-prefix table only
 
-    private lateinit var _keys: IntArray     // rime keys (0 = empty slot)
-    private lateinit var _data: ByteArray    // packed flags per entry
+    private val table = IntFlatTable(TABLE_BITS)
     private lateinit var _fold: LongArray    // per-nucleus fold targets (e/o/a + w-primary)
     private lateinit var _foldW: IntArray    // per-nucleus w alt variant + flags
 
@@ -159,8 +158,6 @@ object RimeMap {
     }
 
     private fun build() {
-        _keys = IntArray(TABLE_SIZE)
-        _data = ByteArray(TABLE_SIZE)
         _fold = LongArray(TABLE_SIZE)
         _foldW = IntArray(TABLE_SIZE)
 
@@ -260,7 +257,7 @@ object RimeMap {
         for (spec in NUCLEI) {
             allRimes.add(spec.nucleus)
             val nucKey = rimeKey(spec.nucleus)
-            val slot = tableInsert(nucKey, packData(1, 1, 0, spec.tnNew, spec.tnOld))
+            val slot = table.insert(nucKey, packData(1, 1, 0, spec.tnNew, spec.tnOld))
             val w = computeFoldW(spec.nucleus)
             val wPrimary = (w and 0xFFFF).toInt()
             val wAlt = ((w ushr 16) and 0xFFFF).toInt()
@@ -285,14 +282,14 @@ object RimeMap {
                 // With a final consonant (coda), the tone always lands on the main
                 // vowel regardless of old/new placement style (hoàn, toán — never
                 // hòan/tóan). tnOld only differs for open rimes oa/oe/uy.
-                tableInsert(rk, packData(1, 1, if (isStop) 1 else 0, spec.tnNew, spec.tnNew))
+                table.insert(rk, packData(1, 1, if (isStop) 1 else 0, spec.tnNew, spec.tnNew))
             }
         }
 
         for (r in allRimes) {
             for (len in 1 until r.length) {
                 val pk = rimeKey(r, 0, len)
-                tableInsertIfAbsent(pk, packData(1, 0, 0, 0, 0))
+                table.insertIfAbsent(pk, packData(1, 0, 0, 0, 0))
             }
         }
 
@@ -328,31 +325,6 @@ object RimeMap {
     ): Int {
         return isPrefix or (isComplete shl 1) or (isStop shl 2) or
                 (tnNew shl 3) or (tnOld shl 5)
-    }
-
-    // ── Flat hash table (primitive arrays, zero boxing) ────────────
-
-    private fun tableHash(key: Int): Int = (key * -0x61c88647).toInt() and TABLE_MASK
-
-    private fun tableInsert(key: Int, data: Int): Int {
-        var slot = tableHash(key)
-        while (_keys[slot] != 0) slot = (slot + 1) and TABLE_MASK
-        _keys[slot] = key
-        _data[slot] = data.toByte()
-        return slot
-    }
-
-    private fun tableInsertIfAbsent(key: Int, data: Int) {
-        var slot = tableHash(key)
-        while (true) {
-            if (_keys[slot] == key) return  // already present
-            if (_keys[slot] == 0) {
-                _keys[slot] = key
-                _data[slot] = data.toByte()
-                return
-            }
-            slot = (slot + 1) and TABLE_MASK
-        }
     }
 
     // ── Vowel combination lookup ─────────────────────────────────
@@ -392,40 +364,29 @@ object RimeMap {
         }
     }
 
-    // ── Lookup (zero allocation, O(1) average) ────────────────────
-
-    private fun find(key: Int): Int {
-        var i = tableHash(key)
-        while (true) {
-            if (_keys[i] == key) return i
-            if (_keys[i] == 0) return -1
-            i = (i + 1) and TABLE_MASK
-        }
-    }
-
     @JvmStatic
-    fun isValidPrefix(key: Int): Boolean = find(key) >= 0
+    fun isValidPrefix(key: Int): Boolean = table.find(key) >= 0
 
     @JvmStatic
     fun isComplete(key: Int): Boolean {
-        val i = find(key)
-        return i >= 0 && (_data[i].toInt() and 2) != 0
+        val i = table.find(key)
+        return i >= 0 && (table.data[i].toInt() and 2) != 0
     }
 
     @JvmStatic
     fun isStop(key: Int): Boolean {
-        val i = find(key)
-        return i >= 0 && (_data[i].toInt() and 4) != 0
+        val i = table.find(key)
+        return i >= 0 && (table.data[i].toInt() and 4) != 0
     }
 
     @JvmStatic
-    fun indexOf(key: Int): Int = find(key)
+    fun indexOf(key: Int): Int = table.find(key)
 
     @JvmStatic
-    fun toneNewAt(idx: Int): Int = (_data[idx].toInt() ushr 3) and 3
+    fun toneNewAt(idx: Int): Int = (table.data[idx].toInt() ushr 3) and 3
 
     @JvmStatic
-    fun toneOldAt(idx: Int): Int = (_data[idx].toInt() ushr 5) and 3
+    fun toneOldAt(idx: Int): Int = (table.data[idx].toInt() ushr 5) and 3
 
     /**
      * Single-lookup check whether [key] is a valid prefix AND accepts [tone] —
@@ -434,9 +395,9 @@ object RimeMap {
      */
     @JvmStatic
     fun isValidPrefixWithTone(key: Int, tone: Int): Boolean {
-        val i = find(key)
+        val i = table.find(key)
         if (i < 0) return false
-        val d = _data[i].toInt()
+        val d = table.data[i].toInt()
         if (tone == 0) return true
         if ((d and 4) == 0) return true
         return tone == 1 || tone == 5
@@ -592,7 +553,7 @@ object RimeMap {
      * already-found slot, so one key never triggers more than one table probe.
      */
     @JvmStatic
-    fun foldSlot(nucleusKey: Int): Int = find(nucleusKey)
+    fun foldSlot(nucleusKey: Int): Int = table.find(nucleusKey)
 
     /** 'e' fold code for a slot from [foldSlot]; 0 = none. */
     @JvmStatic
