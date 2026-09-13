@@ -355,15 +355,15 @@ class VietnameseComposerTest {
     }
 
     @Test
-    fun testTokenValidMapPackKeyGuards() {
-        // TokenValidMap: chuỗi > 10 ký tự và chuỗi rỗng phải bị chặn rõ ràng
+    fun testSylPackKeyGuards() {
+        // Chuỗi > 10 ký tự và chuỗi rỗng phải bị chặn rõ ràng
         // (không để phép dịch bit âm / sentinel 0L ghi nhầm dữ liệu).
-        assertTrue(TokenValidMap.isValidPrefix("nghieng"))
-        assertFalse(TokenValidMap.isValidPrefix("restaurant"))
-        assertFalse(TokenValidMap.isValidPrefix("particularly"))
-        assertFalse(TokenValidMap.isValidPrefix(""))
-        assertFalse(TokenValidMap.isValidPrefix("huaw"))
-        assertTrue(TokenValidMap.isValidPrefix("hua"))
+        assertTrue(RimeMap.isSyllablePrefixValid("nghieng"))
+        assertFalse(RimeMap.isSyllablePrefixValid("restaurant"))
+        assertFalse(RimeMap.isSyllablePrefixValid("particularly"))
+        assertFalse(RimeMap.isSyllablePrefixValid(""))
+        assertFalse(RimeMap.isSyllablePrefixValid("huaw"))
+        assertTrue(RimeMap.isSyllablePrefixValid("hua"))
     }
 
     @Test
@@ -791,15 +791,15 @@ class VietnameseComposerTest {
 
     @Test
     fun testTonePositionMapCoverageAndValidity() {
-        assertTrue(VietnamesePhonology.isValidRime("uyên"))
-        assertTrue(VietnamesePhonology.isValidRime("ươm"))
-        assertTrue(VietnamesePhonology.isValidRime("ương"))
-        assertTrue(VietnamesePhonology.isValidRime("oang"))
+        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("uyên"))
+        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("ươm"))
+        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("ương"))
+        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("oang"))
 
         // Test qu and gi preprocessing
-        assertEquals(1, VietnamesePhonology.findTonePosition("qu", "ua", false)) // qu + ua -> offset 1, idx 0 -> 1 (quá)
-        assertEquals(1, VietnamesePhonology.findTonePosition("gi", "ia", false)) // gi + ia -> offset 1, idx 0 -> 1 (giá)
-        assertEquals(1, VietnamesePhonology.findTonePosition("th", "uơ", false)) // uơ -> 1 in rime
+        assertEquals(1, RimeMap.findTonePosition("qu", "ua", false)) // qu + ua -> offset 1, idx 0 -> 1 (quá)
+        assertEquals(1, RimeMap.findTonePosition("gi", "ia", false)) // gi + ia -> offset 1, idx 0 -> 1 (giá)
+        assertEquals(1, RimeMap.findTonePosition("th", "uơ", false)) // uơ -> 1 in rime
     }
 
     @Test
@@ -1338,9 +1338,9 @@ class VietnameseComposerTest {
 // 
 //     @Test
 //     fun testUyeAndUyeToneProgression() {
-//         assertEquals(2, VietnamesePhonology.findTonePosition("ch", "uye", false))
-//         assertEquals(2, VietnamesePhonology.findTonePosition("ch", "uyê", false))
-//         assertEquals(2, VietnamesePhonology.findTonePosition("ch", "uyên", false))
+//         assertEquals(2, RimeMap.findTonePosition("ch", "uye", false))
+//         assertEquals(2, RimeMap.findTonePosition("ch", "uyê", false))
+//         assertEquals(2, RimeMap.findTonePosition("ch", "uyên", false))
 //         assertEquals("chuyển", engine.process("churyeen"))
 //         assertEquals("chuyển", engine.process("chuyeenr"))
 //     }
@@ -1523,8 +1523,8 @@ class VietnameseComposerTest {
 //         assertEquals(2, VietnamesePhonology.getTonePosition("uyên", oldTonePlacement = true))  // thuyền
 // 
 //         // qu / gi onset integration
-//         assertEquals(1, VietnamesePhonology.findTonePosition("qu", "ua", oldTonePlacement = false)) // quá
-//         assertEquals(1, VietnamesePhonology.findTonePosition("gi", "ia", oldTonePlacement = false)) // giá
+//         assertEquals(1, RimeMap.findTonePosition("qu", "ua", oldTonePlacement = false)) // quá
+//         assertEquals(1, RimeMap.findTonePosition("gi", "ia", oldTonePlacement = false)) // giá
 //     }
 // 
 //     @Test
@@ -1710,9 +1710,9 @@ class VietnameseComposerTest {
 //         assertEquals("duong", VietnameseUnicode.stripToneFromWord("đường").map { VietnameseUnicode.stripDiacritics(it) }.joinToString(""))
 // 
 //         // Tone placement index tests (single authority: VietnamesePhonology.findTonePosition)
-//         assertEquals(1, VietnamesePhonology.findTonePosition(onset = "t", rime = "oan", oldTonePlacement = false)) // toán -> 'a' (index 1)
-//         assertEquals(0, VietnamesePhonology.findTonePosition(onset = "h", rime = "oa", oldTonePlacement = true)) // hoà (old) -> 'o' (index 0)
-//         assertEquals(1, VietnamesePhonology.findTonePosition(onset = "h", rime = "oa", oldTonePlacement = false)) // hòa (new) -> 'a' (index 1)
+//         assertEquals(1, RimeMap.findTonePosition(onset = "t", rime = "oan", oldTonePlacement = false)) // toán -> 'a' (index 1)
+//         assertEquals(0, RimeMap.findTonePosition(onset = "h", rime = "oa", oldTonePlacement = true)) // hoà (old) -> 'o' (index 0)
+//         assertEquals(1, RimeMap.findTonePosition(onset = "h", rime = "oa", oldTonePlacement = false)) // hòa (new) -> 'a' (index 1)
 // 
 //         // VietnameseUnicode tests
 //         assertEquals("VIỆT", VietnameseUnicode.applyCasingFromRaw("việt", "VIET"))
