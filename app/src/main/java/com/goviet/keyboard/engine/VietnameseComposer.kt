@@ -42,6 +42,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var tone: Tone = Tone.NONE,
         var rawSuffix: String = ""
     ) {
+        /** Per-state render scratch — avoids allocating an OwnedBuffer per display. */
+        private val displayScratch = OwnedBuffer()
+
         fun reset() {
             onset = ""; nucleus = ""; coda = ""
             tone = Tone.NONE; rawSuffix = ""
@@ -49,9 +52,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         fun isEmpty(): Boolean = onset.isEmpty() && nucleus.isEmpty() && coda.isEmpty() && rawSuffix.isEmpty()
 
         fun toDisplayString(oldTonePlacement: Boolean = false): String {
-            val buf = OwnedBuffer()
-            toDisplayBuffer(buf, oldTonePlacement)
-            return buf.toStringVal()
+            toDisplayBuffer(displayScratch, oldTonePlacement)
+            return displayScratch.toStringVal()
         }
 
         fun toDisplayBuffer(out: OwnedBuffer, oldTonePlacement: Boolean = false) {
