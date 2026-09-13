@@ -986,22 +986,31 @@ class VietnameseComposerTest {
     }
 
     @Test
-    fun testUndoStack_Deepseel_Backspace() {
+    fun testBackspaceDeepseelGraphemeDeletion() {
+        // Gõ "deepseel": Telex fold chạy ngay khi gõ (ee -> ê, s -> dấu sắc),
+        // nên display là "dếpeel" trong khi raw buffer vẫn là "deepseel".
         engine.reset()
         for (c in "deepseel") {
             engine.processKey(c)
         }
-        // Xóa 'l' phải phục hồi về trạng thái trước đó "dếpee"
+        assertEquals("dếpeel", engine.toDisplayString())
+
+        // Backspace xoá ĐÚNG 1 grapheme hiển thị (kiểu Gboard), không xoá phím
+        // thô. Survivor "dếpee" không round-trip được (adoptRoundTrip == null)
+        // nên buffer bị khoá literal (isVietnamese = false) — không bao giờ bị
+        // diễn giải Telex lại.
         val afterDelL = engine.backspace()
         assertEquals("dếpee", afterDelL)
+        assertFalse(engine.isVietnamese)
 
-        // Gõ 'k' tiếp theo -> "dếpeek"
+        // Gõ 'k' sau khi xoá 'l' chỉ nối chữ vào buffer literal: "dếpee" ->
+        // "dếpeek" (không bị biến đổi tiếp).
         val afterAddK = engine.processKey('k').text
         assertEquals("dếpeek", afterAddK)
     }
 
     @Test
-    fun testUndoStack_StepByStepBackspaces() {
+    fun testBackspaceDeepseelFullChain() {
         engine.reset()
         for (c in "deepseel") {
             engine.processKey(c)
@@ -1053,7 +1062,7 @@ class VietnameseComposerTest {
         val lastResult = engine.processKey('g')
         assertEquals("đang", lastResult.text)
 
-        // Gọi process độc lập không được làm ảnh hưởng đến composingText hay undoStack
+        // Gọi process độc lập không được làm ảnh hưởng đến composingText hay buffer interactive
         val result = engine.process("tiếng việt")
         assertEquals("tiếng việt", result)
 
