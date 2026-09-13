@@ -1487,7 +1487,7 @@ class VietnameseComposerTest {
 //     }
 // 
 //     @Test
-//     fun testVietnamesePhonologyTrieAndTonePosition() {
+//     fun testFlatTablePrefixAndTonePosition() {
 //         // Test prefix lookups
 //         assertTrue(VietnamesePhonology.isValidPrefix("u"))
 //         assertTrue(VietnamesePhonology.isValidPrefix("uy"))

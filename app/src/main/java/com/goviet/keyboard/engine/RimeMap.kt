@@ -4,15 +4,15 @@ package com.goviet.keyboard.engine
  * RimeMap — zero-computation flat map for Vietnamese rimes.
  *
  * Vietnamese rime characters are encoded to 5-bit indices and packed into a
- * compact 25-bit integer key via simple bit shifts.  All valid rimes and their
- * prefixes are stored in a flat [IntArray]-keyed lookup — no FNV multiplication,
- * no linear probing, O(1) average lookup on the hot path.
- *
- * The key for a rime "abc" (chars a, b, c) is computed as:
+ * compact 25-bit integer key via simple bit shifts (max rime length 5):
  *   key = (idx(a) << 10) | (idx(b) << 5) | idx(c)
  *
- * Max rime length 5 → 25-bit key → Int.
- * ~600 valid entries + ~200 prefix entries = ~800 entries in the flat table.
+ * Keys live in the shared open-addressing flat table [IntFlatTable]
+ * (Fibonacci-multiply hash + linear probing, 16384 slots) with the
+ * fold-target and tone-position data riding in the table values;
+ * ~600 valid rime entries + ~200 prefix entries.  The syllable-prefix table
+ * (display → ASCII, 2705 entries) uses the same hash with an extra xor-fold
+ * before truncation to its 14-bit address.
  */
 object RimeMap {
 
@@ -657,7 +657,7 @@ object RimeMap {
 
 
 
-    // ── Vietnamese phonological utilities (formerly in VietnamesePhonology) ──
+    // ── Vietnamese phonological utilities ──
 
     /** 12 Vietnamese base vowels (unaccented): a ă â e ê i o ô ơ u ư y. */
     val BASE_VOWELS = "aăâeêioôơuưy"
@@ -722,17 +722,16 @@ object RimeMap {
         return isValidPrefixWithTone(rimeKey(rime), tone.index)
     }
 
-    /** Validate that a rime (by precomputed key) is valid for a specific tone. */
+    /** Validate that a rime (by precomputed flat-table key) is valid for a specific tone. */
     @JvmStatic
-    fun isRimeHashValidForTone(key: Long, tone: Tone): Boolean =
-        isValidPrefixWithTone(key.toInt(), tone.index)
+    fun isRimeKeyValidForTone(key: Int, tone: Tone): Boolean =
+        isValidPrefixWithTone(key, tone.index)
 
-    /** Determine tone position from a precomputed rime key — zero allocation. */
+    /** Determine tone position from a precomputed flat-table key — zero allocation. */
     @JvmStatic
-    fun determineTonePositionHash(rimeKey: Long, oldTonePlacement: Boolean, nucleusLength: Int = 0): Int {
-        val key = rimeKey.toInt()
-        val i = indexOf(key)
-        if (i < 0 || !isComplete(key)) return (nucleusLength - 1).coerceAtLeast(0)
+    fun determineTonePosition(rimeKey: Int, oldTonePlacement: Boolean, nucleusLength: Int = 0): Int {
+        val i = indexOf(rimeKey)
+        if (i < 0 || !isComplete(rimeKey)) return (nucleusLength - 1).coerceAtLeast(0)
         return if (oldTonePlacement) toneOldAt(i) else toneNewAt(i)
     }
 
@@ -777,7 +776,7 @@ object RimeMap {
 
 
     // ── Syllable prefix table (auto-generated from 18342 syllables) ──────
-    // Merged from TokenValidMap — single source of truth for display-prefix
+    // Single source of truth for display-prefix
     // validation (e.g. qu+ư invalid, onset+rime must be a prefix of a real syllable).
     private val _sylTable = LongArray(TABLE_SIZE)
 

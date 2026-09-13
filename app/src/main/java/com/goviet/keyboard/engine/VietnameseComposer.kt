@@ -65,8 +65,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 return
             }
             val rimeKey = RimeMap.keyCat(nucleus, nucleus.length, coda, coda.length)
-            var toneIdx = RimeMap.determineTonePositionHash(
-                rimeKey.toLong(), oldTonePlacement, nucleus.length)
+            var toneIdx = RimeMap.determineTonePosition(
+                rimeKey, oldTonePlacement, nucleus.length)
             if (coda.isEmpty() && rawSuffix.isNotEmpty()) {
                 val pending = pendingFoldCodaIndex()
                 if (pending >= 0) toneIdx = pending
@@ -377,7 +377,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 return
             }
             val rk = ctx.rimeKey
-            if (RimeMap.isRimeHashValidForTone(rk.toLong(), targetTone)) {
+            if (RimeMap.isRimeKeyValidForTone(rk, targetTone)) {
                 out.tone = targetTone
                 ctx.lastToneKey = cLow
             } else {
