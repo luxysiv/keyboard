@@ -132,7 +132,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private val processRaw = StringBuilder()
     private val processState = SyllableState()
 
-    fun reset() { replayState.reset(); processRaw.clear(); processState.reset() }
+    fun reset() { replayState.reset(); processRaw.clear(); processState.reset(); isVietnamese = true }
     /** isVietnamese flag — used by tests to switch Vietnamese/Literal mode. */
     var isVietnamese: Boolean = true
 
@@ -234,6 +234,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var rimeKey: Int = 0,
         var lastFoldKey: Char = '\u0000',   // fold key that last modified nucleus
         var lastFoldNucIdx: Int = -1,        // nucleus index where fold was applied
+        var lastFoldPos: Int = -1,           // raw position where the fold was applied
         var lastToneKey: Char = '\u0000',
         var syllableLocked: Boolean = false, // once a char is rejected the rest is literal
         var justUntoggled: Boolean = false,  // prevents immediate re-fold after untoggle
@@ -399,7 +400,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 out.rawSuffix += c
                 ctx.syllableLocked = true; ctx.toneLocked = true
             }
-            ctx.lastFoldKey = '\u0000'
+            ctx.lastFoldKey = '\u0000'; ctx.lastFoldPos = -1
             return pos + 1
         }
         // Second 'w' after onset 'w' → discard (w+w → w), only when directW=OFF.
@@ -422,6 +423,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 ctx.nucKey = RimeMap.rimeKey(out.nucleus)
                 ctx.rimeKey = ctx.nucKey
                 ctx.lastFoldKey = 'w'; ctx.lastFoldNucIdx = 0
+                ctx.lastFoldPos = pos
                 ctx.standaloneWFold = true
                 return pos + 1
             }
@@ -430,6 +432,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // releases the fold as literal (not a second fold: ơ→o + release w).
         if (!ctx.syllableLocked && RimeMap.isFoldKey(cLow) && out.nucleus.isNotEmpty() && !ctx.justUntoggled) {
             if (ctx.lastFoldKey != '\u0000' && cLow == ctx.lastFoldKey &&
+                pos == ctx.lastFoldPos + 1 &&
                 ctx.lastFoldNucIdx >= 0 && ctx.lastFoldNucIdx < out.nucleus.length &&
                 out.nucleus[ctx.lastFoldNucIdx] != RimeMap.plainOf(out.nucleus[ctx.lastFoldNucIdx])) {
                 if (ctx.standaloneWFold) {
@@ -449,7 +452,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         out.nucleus += c
                     }
                 }
-                ctx.lastFoldKey = '\u0000'; ctx.lastFoldNucIdx = -1
+                ctx.lastFoldKey = '\u0000'; ctx.lastFoldNucIdx = -1; ctx.lastFoldPos = -1
                 ctx.nucKey = if (out.nucleus.isEmpty()) 0 else RimeMap.rimeKey(out.nucleus)
                 ctx.rimeKey = ctx.nucKey
                 ctx.standaloneWFold = false
@@ -458,7 +461,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
             val foldIdx = applyFoldRules(c, ctx.nucKey, pos, raw, out)
             if (foldIdx >= 0) {
-                ctx.lastFoldKey = cLow; ctx.lastFoldNucIdx = foldIdx
+                ctx.lastFoldKey = cLow; ctx.lastFoldNucIdx = foldIdx; ctx.lastFoldPos = pos
                 ctx.nucKey = RimeMap.rimeKey(out.nucleus)
                 ctx.rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
                 ctx.standaloneWFold = false
@@ -540,6 +543,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                             if (RimeMap.isValidPrefixWithTone(deferredRk, out.tone.index)) {
                                 out.nucleus = foldedNuc
                                 ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                                ctx.lastFoldKey = nextChar
+                                ctx.lastFoldPos = pos + 1
                                 out.coda += c
                                 ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
                                 return 2  // skip coda char + fold key
@@ -564,6 +569,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                                         RimeMap.isToneAllowed(deferredRk, targetTone.index)) {
                                         out.nucleus = foldedNuc
                                         ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                                        ctx.lastFoldKey = foldKey
+                                        ctx.lastFoldPos = pos + 2
                                         out.coda += c
                                         ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
                                         out.tone = targetTone
@@ -683,17 +690,45 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             val commitText = processState.toDisplayString(options.oldTonePlacement)
             processRaw.clear()
             processState.reset()
+            isVietnamese = true
             return CompositionResult.CommitAndStartNew(commitText, key)
         }
         processRaw.append(key)
-        resegment(processRaw, processState)
+        if (isVietnamese) {
+            resegment(processRaw, processState)
+        } else {
+            processState.reset()
+            processState.rawSuffix = processRaw.toString()
+        }
         return CompositionResult.Update(processState.toDisplayString(options.oldTonePlacement))
     }
 
     fun backspace(): String {
-        if (processRaw.isNotEmpty()) {
-            processRaw.deleteCharAt(processRaw.length - 1)
+        if (processRaw.isEmpty()) return ""
+        val display = processState.toDisplayString(options.oldTonePlacement)
+        // Gboard-style: delete one complete displayed grapheme, never one raw
+        // keystroke. The surviving display is re-adopted to canonical Telex raw
+        // when it round-trips exactly; otherwise it is locked as literal text so
+        // the survivor can never silently re-transform (word-edit mode).
+        val start = GraphemeEditor.previousBoundary(display, display.length)
+        if (start <= 0) {
+            processRaw.clear(); processState.reset()
+            return ""
+        }
+        val newDisplay = display.substring(0, start)
+        val adopt = adoptWord(newDisplay)
+        val roundTrip = adopt != null && adopt.isValid && process(adopt.canonicalRaw) == newDisplay
+        if (roundTrip) {
+            isVietnamese = true
+            processRaw.setLength(0)
+            processRaw.append(adopt!!.canonicalRaw)
             resegment(processRaw, processState)
+        } else {
+            isVietnamese = false
+            processRaw.setLength(0)
+            processRaw.append(newDisplay)
+            processState.reset()
+            processState.rawSuffix = newDisplay
         }
         return processState.toDisplayString(options.oldTonePlacement)
     }

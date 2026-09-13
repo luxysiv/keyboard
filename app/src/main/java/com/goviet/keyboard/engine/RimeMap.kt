@@ -296,7 +296,10 @@ object RimeMap {
                 allRimes.add(rime)
                 val rk = rimeKey(rime)
                 val isStop = c == "c" || c == "ch" || c == "p" || c == "t"
-                tableInsert(rk, packData(1, 1, if (isStop) 1 else 0, spec.tnNew, spec.tnOld))
+                // With a final consonant (coda), the tone always lands on the main
+                // vowel regardless of old/new placement style (hoàn, toán — never
+                // hòan/tóan). tnOld only differs for open rimes oa/oe/uy.
+                tableInsert(rk, packData(1, 1, if (isStop) 1 else 0, spec.tnNew, spec.tnNew))
             }
         }
 

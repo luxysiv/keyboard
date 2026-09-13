@@ -1835,36 +1835,36 @@ class VietnameseComposerTest {
 //     //         assertTrue(offsetAfterG == "bong".length)
 //     //     }
 // 
-//     @Test
-//     fun testStandardizedBackspaceVisualGraphemeReduction() {
-//         // "đường" -> "đườn" -> "đườ" -> "đư" -> "đ" -> ""
-//         engine.reset()
-//         for (c in "dduwongf") engine.processKey(c)
-//         assertEquals("đường", engine.toDisplayString())
-//         assertEquals("đườn", engine.backspace())
-//         assertEquals("đườ", engine.backspace())
-//         assertEquals("đư", engine.backspace())
-//         assertEquals("đ", engine.backspace())
-//         assertEquals("", engine.backspace())
-// 
-//         // "toán" -> "toá" -> "to" -> "t" -> ""
-//         engine.reset()
-//         for (c in "toans") engine.processKey(c)
-//         assertEquals("toán", engine.toDisplayString())
-//         assertEquals("toá", engine.backspace())
-//         assertEquals("to", engine.backspace())
-//         assertEquals("t", engine.backspace())
-//         assertEquals("", engine.backspace())
-// 
-//         // "việt" -> "việ" -> "vi" -> "v" -> ""
-//         engine.reset()
-//         for (c in "vieetj") engine.processKey(c)
-//         assertEquals("việt", engine.toDisplayString())
-//         assertEquals("việ", engine.backspace())
-//         assertEquals("vi", engine.backspace())
-//         assertEquals("v", engine.backspace())
-//         assertEquals("", engine.backspace())
-//     }
+    @Test
+    fun testStandardizedBackspaceVisualGraphemeReduction() {
+        // "đường" -> "đườn" -> "đườ" -> "đư" -> "đ" -> ""
+        engine.reset()
+        for (c in "dduwongf") engine.processKey(c)
+        assertEquals("đường", engine.toDisplayString())
+        assertEquals("đườn", engine.backspace())
+        assertEquals("đườ", engine.backspace())
+        assertEquals("đư", engine.backspace())
+        assertEquals("đ", engine.backspace())
+        assertEquals("", engine.backspace())
+
+        // "toán" -> "toá" -> "to" -> "t" -> ""
+        engine.reset()
+        for (c in "toans") engine.processKey(c)
+        assertEquals("toán", engine.toDisplayString())
+        assertEquals("toá", engine.backspace())
+        assertEquals("to", engine.backspace())
+        assertEquals("t", engine.backspace())
+        assertEquals("", engine.backspace())
+
+        // "việt" -> "việ" -> "vi" -> "v" -> ""
+        engine.reset()
+        for (c in "vieetj") engine.processKey(c)
+        assertEquals("việt", engine.toDisplayString())
+        assertEquals("việ", engine.backspace())
+        assertEquals("vi", engine.backspace())
+        assertEquals("v", engine.backspace())
+        assertEquals("", engine.backspace())
+    }
 // 
 // }
 
