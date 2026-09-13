@@ -53,10 +53,6 @@ class VietnameseInputMethodService : InputMethodService(), LifecycleOwner, ViewM
     lateinit var clipboardCoordinator: ClipboardCoordinator
     lateinit var keyboardUIManager: KeyboardUIManager
 
-    // Backward-compatible delegator for composing raw buffer
-    val composingRaw: java.lang.StringBuilder
-        get() = inputProcessor.composingRaw
-
     var lastCommittedWord: String? = null
     var currentSelStart = 0
     var currentSelEnd = 0
@@ -259,7 +255,7 @@ class VietnameseInputMethodService : InputMethodService(), LifecycleOwner, ViewM
 
         if (!inputEngine.autoCapitalize) return
 
-        if (inputProcessor.composingRaw.isNotEmpty()) return
+        if (inputProcessor.inputEngine.isComposing()) return
 
         val now = System.currentTimeMillis()
         if (!forceIpc && (now - inputProcessor.lastKeyPressTime < 350L)) {
@@ -359,7 +355,7 @@ class VietnameseInputMethodService : InputMethodService(), LifecycleOwner, ViewM
 
     fun isAtStartOfSentence(ic: InputConnection?): Boolean {
         if (ic == null) return false
-        if (inputProcessor.composingRaw.isNotEmpty()) return false
+        if (inputProcessor.inputEngine.isComposing()) return false
 
         val textBefore = ic.getTextBeforeCursor(32, 0)?.toString() ?: return true
         if (textBefore.isBlank()) return true
@@ -422,13 +418,13 @@ class VietnameseInputMethodService : InputMethodService(), LifecycleOwner, ViewM
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
 
         // Dynamically trace the word right before the cursor to keep suggestion context alive and accurate
-        if (inputProcessor.composingRaw.isNotEmpty()) {
+        if (inputProcessor.inputEngine.isComposing()) {
             lastCommittedWord = inputProcessor.lastSetComposingText ?: inputProcessor.compileComposingText()
         }
 
         val now = System.currentTimeMillis()
         val isIdle = (now - inputProcessor.lastKeyPressTime >= 350L)
-        if (newSelStart == newSelEnd && inputProcessor.composingRaw.isEmpty()) {
+        if (newSelStart == newSelEnd && !inputProcessor.inputEngine.isComposing()) {
             evaluateAutoShift(forceIpc = isIdle)
         }
     }

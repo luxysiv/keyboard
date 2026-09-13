@@ -8,9 +8,9 @@ import com.goviet.core.EngineConfig
  * VietnameseComposer — Single-resegment Telex engine.
  *
  * All syllable segmentation is derived by the single `resegment` function.
- * No incremental mutation of syllable fields through per-keystroke handlers —
- * the controller appends each key to the raw buffer, then feedKey rederives
- * the full state from scratch on that buffer.
+ * The instance owns the composing preedit buffer and derives the display from
+ * it through the session API below; the IME controller never keeps a second
+ * copy of the composing state.
  */
 class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
@@ -678,10 +678,43 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     // PUBLIC API
     // ================================================================
 
-    fun feedKey(composingRaw: StringBuilder, state: SyllableState, key: Char): Boolean {
-        // Controller already appended key to composingRaw — just resegment.
-        resegment(composingRaw, state)
-        return true
+    // ── Composing session API (single source of truth for the preedit) ──
+    // The composer owns the composing buffer; the controller delegates every
+    // keystroke, adoption and edit here instead of keeping a second copy.
+
+    /** True while a preedit session has a non-empty raw buffer. */
+    fun isComposing(): Boolean = processRaw.isNotEmpty()
+
+    /** Read-only view of the composing raw keystrokes (caret mapping helpers). */
+    fun composingRaw(): CharSequence = processRaw
+
+    fun composingRawLength(): Int = processRaw.length
+
+    /**
+     * Replaces the composing raw buffer (adoption / display-level edits).
+     * When [isVietnamese] is false the text is kept verbatim (word-edit literal
+     * lock); otherwise it is resegmented through the Telex kernel.
+     */
+    fun setComposingRaw(raw: CharSequence) {
+        processRaw.setLength(0)
+        processRaw.append(raw)
+        if (isVietnamese) {
+            resegment(processRaw, processState)
+        } else {
+            processState.reset()
+            processState.rawSuffix = raw.toString()
+        }
+    }
+
+    /** Inserts one Telex key at [index] of the composing raw and resegments. */
+    fun insertComposingKey(index: Int, key: Char) {
+        processRaw.insert(index, key)
+        if (isVietnamese) {
+            resegment(processRaw, processState)
+        } else {
+            processState.reset()
+            processState.rawSuffix = processRaw.toString()
+        }
     }
 
     fun processKey(key: Char): CompositionResult {
@@ -693,13 +726,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             isVietnamese = true
             return CompositionResult.CommitAndStartNew(commitText, key)
         }
-        processRaw.append(key)
-        if (isVietnamese) {
-            resegment(processRaw, processState)
-        } else {
-            processState.reset()
-            processState.rawSuffix = processRaw.toString()
-        }
+        insertComposingKey(processRaw.length, key)
         return CompositionResult.Update(processState.toDisplayString(options.oldTonePlacement))
     }
 

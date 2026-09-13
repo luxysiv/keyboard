@@ -80,7 +80,7 @@ class BackspaceHandler(
                 return
             }
 
-            if (controller.composingRaw.isNotEmpty()) {
+            if (controller.inputEngine.isComposing()) {
                 performComposingBackspace(ic)
                 controller.service.evaluateAutoShift()
                 return
@@ -97,7 +97,7 @@ class BackspaceHandler(
             // This keeps the behavior identical regardless of whether the editor
             // reported the caret move through onUpdateSelection.
             controller.adoptPrefixAtCaret(ic)
-            if (controller.composingRaw.isNotEmpty()) {
+            if (controller.inputEngine.isComposing()) {
                 performComposingBackspace(ic)
                 controller.service.evaluateAutoShift()
                 return
@@ -125,7 +125,7 @@ class BackspaceHandler(
                 return
             }
 
-            if (controller.composingRaw.isNotEmpty()) {
+            if (controller.inputEngine.isComposing()) {
                 performComposingDeleteForward(ic)
                 controller.service.evaluateAutoShift()
                 return
@@ -142,7 +142,7 @@ class BackspaceHandler(
         ic.beginBatchEdit()
         try {
             controller.lastExpandedMacro = null
-            if (controller.composingRaw.isNotEmpty()) {
+            if (controller.inputEngine.isComposing()) {
                 // Delete the whole preedit (swipe/word-delete), then clear composing UI.
                 val lastLen = controller.lastSetComposingText?.length ?: 0
                 controller.resetComposingUI(ic, lastLen)
@@ -237,17 +237,8 @@ class BackspaceHandler(
                 controller.compileText(adopt.canonicalRaw) == display
         val canonical = if (useVietnamese) adopt!!.canonicalRaw else display
 
-        val raw = controller.composingRaw
-        raw.clear()
-        raw.append(canonical)
-
-        if (useVietnamese) {
-            controller.inputEngine.replayRawToState(canonical, controller.composingState)
-        } else {
-            controller.composingState.reset()
-            controller.composingState.rawSuffix = canonical
-        }
-        controller.isVietnamese = useVietnamese
+        controller.inputEngine.isVietnamese = useVietnamese
+        controller.inputEngine.setComposingRaw(canonical)
         controller.composingCursorIndex = controller.rawIndexOfDisplay(
             canonical, display, caretInDisplay, useVietnamese
         )
@@ -299,10 +290,9 @@ class BackspaceHandler(
         controller.lastExpandedMacro = null
         deleteBefore(ic, macro.expandedText.length)
         // Replay the macro trigger through the same raw recompiler.
-        controller.composingRaw.clear()
-        controller.composingRaw.append(macro.trigger)
+        controller.inputEngine.isVietnamese = true
+        controller.inputEngine.setComposingRaw(macro.trigger)
         controller.composingCursorIndex = macro.trigger.length
-        controller.isVietnamese = true
         replaceComposingText(ic, controller.compileRawDisplay())
         return true
     }

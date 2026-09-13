@@ -4,14 +4,14 @@ import com.goviet.keyboard.VietnameseInputMethodService
 import android.util.Log
 import android.view.KeyEvent
 import android.view.inputmethod.InputConnection
-import java.lang.StringBuilder
 
 /**
  * ImeInputConnectionController (IME Input Controller)
  *
  * Architecture Role:
  * - Manages the IME layer interaction with Android's InputConnection.
- * - Handles composing text buffers (composingRaw), cursor tracking, selection, and backspace logic.
+ * - Delegates the composing preedit to VietnameseComposer's session buffer (single
+ *   source of truth); handles cursor tracking, selection, and backspace logic.
  * - Delegates Vietnamese syllable rules and settings (Telex, Simple Telex, Modern Style, Macros) to VietnameseComposer.
  */
 class ImeInputConnectionController(
@@ -54,19 +54,14 @@ class ImeInputConnectionController(
         typingMode = TypingMode.VIETNAMESE
     }
 
-    val composingRaw = StringBuilder()
     var lastSetComposingText: String? = null
     var activeComposingShiftState = 0 // 0: lowercase, 1: title case, 2: uppercase (caps lock)
-    var isVietnamese: Boolean = true
     private var lastShiftTime = 0L
     var isSelecting: Boolean = false
     var lastKeyPressTime = 0L
     private val displayBuf = OwnedBuffer()
     var composingStartInEditor = -1
     var composingCursorIndex = 0
-
-    /** Live syllable state — source of truth for display. */
-    val composingState = VietnameseComposer.SyllableState()
 
     /**
      * SelectionGuard — the single owner of "is this onUpdateSelection ours?" bookkeeping.
@@ -230,7 +225,7 @@ class ImeInputConnectionController(
         // Consuming those blindly makes the IME treat a real user cursor move as its own and
         // jump the caret, so only swallow positions that actually fall inside the active
         // composing region for the current syllable.
-        val lastDisplay = if (composingRaw.isEmpty()) null else (lastSetComposingText ?: compileComposingText())
+        val lastDisplay = if (!inputEngine.isComposing()) null else (lastSetComposingText ?: compileComposingText())
         val compStart = if (candidatesStart >= 0) candidatesStart else composingStartInEditor
         val compEnd = if (compStart >= 0 && lastDisplay != null) compStart + lastDisplay.length else -1
 
@@ -249,7 +244,7 @@ class ImeInputConnectionController(
             // When the editor drops our composing span (InputFilter / WebView reflow),
             // re-announce it so the engine's composing region stays in sync with the
             // client instead of drifting and eventually making the caret jump.
-            if (candidatesStart == -1 && composingRaw.isNotEmpty() && lastDisplay != null &&
+            if (candidatesStart == -1 && inputEngine.isComposing() && lastDisplay != null &&
                 composingStartInEditor >= 0
             ) {
                 val ic = service.currentInputConnection
@@ -277,7 +272,7 @@ class ImeInputConnectionController(
 
         // 3. User actively moved cursor or tapped elsewhere while a composing session was active:
         // Commit the active composition as-is and reset IME state so the next keystroke starts cleanly.
-        if (composingRaw.isNotEmpty()) {
+        if (inputEngine.isComposing()) {
             val ic = service.currentInputConnection
             if (ic != null) {
                 ic.beginBatchEdit()
@@ -312,7 +307,7 @@ class ImeInputConnectionController(
      * for the adoption when an editor does not report the tap via onUpdateSelection.
      */
     fun adoptPrefixAtCaret(ic: InputConnection) {
-        if (composingRaw.isNotEmpty()) return
+        if (inputEngine.isComposing()) return
         if (userSelectedText) return
         if (service._languageMode.value == "ENG" || isBypassVietnameseComposing()) return
 
@@ -334,11 +329,9 @@ class ImeInputConnectionController(
         if (compileText(adopt.canonicalRaw) != prefix) return
 
         composingStartInEditor = word.startInEditor
-        composingRaw.clear()
-        composingRaw.append(adopt.canonicalRaw)
+        inputEngine.isVietnamese = true
+        inputEngine.setComposingRaw(adopt.canonicalRaw)
         composingCursorIndex = adopt.canonicalRaw.length
-        isVietnamese = true
-        inputEngine.replayRawToState(adopt.canonicalRaw, composingState)
         lastSetComposingText = prefix
         // announceRegion registers the caret AND updates the editor in one step, so the
         // reflection of our own setComposingRegion is consumed as ours instead of being
@@ -379,18 +372,15 @@ class ImeInputConnectionController(
     }
 
     fun clearState() {
-        composingRaw.clear()
-        composingState.reset()
+        inputEngine.reset()
         lastSetComposingText = null
         activeComposingShiftState = 0
-        isVietnamese = true
         lastKeyPressTime = 0L
         composingStartInEditor = -1
         composingCursorIndex = 0
         selectionGuard.clear()
         lastExpandedMacro = null
         lastCommittedSeparator = null
-        inputEngine.reset()
     }
 
     fun isVietnameseLetterChar(c: Char): Boolean {
@@ -533,16 +523,14 @@ class ImeInputConnectionController(
             displayBuf.clear()
             inputEngine.compileRaw(canonicalRaw, vietnamese = true, displayBuf)
             if (displayBuf.toStringVal() != adoptTarget) {
-                isVietnamese = true
+                inputEngine.isVietnamese = true
                 userMovedCursor = false
                 return
             }
             composingStartInEditor = wordAtCursor.startInEditor
-            composingRaw.clear()
-            composingRaw.append(canonicalRaw)
+            inputEngine.isVietnamese = true
+            inputEngine.setComposingRaw(canonicalRaw)
             composingCursorIndex = canonicalRaw.length
-            isVietnamese = true
-            inputEngine.replayRawToState(canonicalRaw, composingState)
             lastSetComposingText = displayBuf.toStringVal()
             selectionGuard.announceRegion(
                 ic,
@@ -565,11 +553,9 @@ class ImeInputConnectionController(
             // keystrokes into the live state so the next character (vowel) extends
             // it naturally into a full syllable (e.g. "ch" + "o" → "cho" underlined).
             composingStartInEditor = wordAtCursor.startInEditor
-            composingRaw.clear()
-            composingRaw.append(wordText)
+            inputEngine.isVietnamese = true
+            inputEngine.setComposingRaw(wordText)
             composingCursorIndex = wordText.length
-            isVietnamese = true
-            inputEngine.replayRawToState(wordText, composingState)
             lastSetComposingText = wordText
             selectionGuard.announceRegion(
                 ic, wordAtCursor.startInEditor, wordAtCursor.endInEditor, wordAtCursor.endInEditor
@@ -579,12 +565,9 @@ class ImeInputConnectionController(
         }
         if (wordAtCursor != null && isAtEnd && wordText.isNotEmpty() && !isVietnameseOnsetSeed && regionValid) {
             composingStartInEditor = wordAtCursor.startInEditor
-            composingRaw.clear()
-            composingRaw.append(wordText)
+            inputEngine.isVietnamese = false
+            inputEngine.setComposingRaw(wordText)
             composingCursorIndex = wordText.length
-            isVietnamese = false
-            composingState.reset()
-            composingState.rawSuffix = wordText
             lastSetComposingText = wordText
             selectionGuard.announceRegion(
                 ic, wordAtCursor.startInEditor, wordAtCursor.endInEditor, wordAtCursor.endInEditor
@@ -593,7 +576,7 @@ class ImeInputConnectionController(
             return
         }
 
-        isVietnamese = !(wordAtCursor != null && wordCursorOffset > 0 && wordCursorOffset < wordTextLength)
+        inputEngine.isVietnamese = !(wordAtCursor != null && wordCursorOffset > 0 && wordCursorOffset < wordTextLength)
 
         userMovedCursor = false
     }
@@ -623,8 +606,6 @@ class ImeInputConnectionController(
         ic.beginBatchEdit()
         try {
             selectionGuard.clear()
-            composingRaw.clear()
-            composingState.reset()
             activeComposingShiftState = 0
             lastSetComposingText = null
             inputEngine.reset()
@@ -656,7 +637,7 @@ class ImeInputConnectionController(
                 ic.setComposingText(compiled, 1)
             }
             if (composingStartInEditor >= 0) {
-                if (composingCursorIndex != composingRaw.length) {
+                if (composingCursorIndex != inputEngine.composingRawLength()) {
                     // Mid-preedit caret: place it at the display offset of the raw caret.
                     moveCursorTo(ic, composingStartInEditor + displayCursorIndex())
                 } else {
@@ -691,7 +672,7 @@ class ImeInputConnectionController(
     }
 
     private fun handleSeparator(ic: InputConnection, separator: String) {
-        if (composingRaw.isNotEmpty()) {
+        if (inputEngine.isComposing()) {
             commitAndReset(wordBreak = separator)
         } else {
             commitAndReset()
@@ -792,25 +773,21 @@ class ImeInputConnectionController(
                         service.shiftController.consumeSingleShift()
                         service.evaluateAutoShift(forceIpc = false)
                     } else {
-                        if (composingRaw.isEmpty()) {
+                        if (!inputEngine.isComposing()) {
                             val wordAtCursor = findWordAroundCursor(ic)
                             resolveCompositionAtCursor(ic, actualKey, wordAtCursor)
                         }
-                        if (composingRaw.isEmpty()) {
+                        if (!inputEngine.isComposing()) {
                             activeComposingShiftState = service.shiftController.value
                         }
                         val lastLen = lastSetComposingText?.length ?: 0
-                        composingRaw.insert(composingCursorIndex, actualKey)
+                        inputEngine.insertComposingKey(composingCursorIndex, actualKey[0])
                         composingCursorIndex += actualKey.length
                         lastCommittedChar = actualKey.lastOrNull()
                         lastCommittedSeparator = null
 
-                        // Feed key into live state — incremental, no replay.
-                        if (isVietnamese && actualKey.length == 1) {
-                            inputEngine.feedKey(composingRaw, composingState, actualKey[0])
-                        }
-                        val casedDisplay = if (isVietnamese) {
-                            composingState.toDisplayString(inputEngine.options.oldTonePlacement)
+                        val casedDisplay = if (inputEngine.isVietnamese) {
+                            inputEngine.toDisplayString()
                         } else {
                             compileRawDisplay()
                         }
@@ -889,9 +866,9 @@ class ImeInputConnectionController(
      * function, so what the user sees is always exactly what gets committed.
      */
     fun compileRawDisplay(): String {
-        if (composingRaw.isEmpty()) return ""
-        inputEngine.compileRaw(composingRaw, isVietnamese, displayBuf)
-        return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), composingRaw.toString())
+        if (!inputEngine.isComposing()) return ""
+        return VietnameseUnicode.applyCasingFromRaw(
+            inputEngine.toDisplayString(), inputEngine.composingRaw().toString())
     }
 
     /**
@@ -903,12 +880,13 @@ class ImeInputConnectionController(
         if (end <= 0) return ""
         if (end >= raw.length) return compileRawDisplay()
         // Pass raw + end directly — compileRaw reads chars without needing a substring
-        inputEngine.compileRaw(raw, isVietnamese, displayBuf, end)
+        inputEngine.compileRaw(raw, inputEngine.isVietnamese, displayBuf, end)
         return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), raw.subSequence(0, end).toString())
     }
 
     /** Display caret offset (chars) for the current raw caret. */
-    fun displayCursorIndex(): Int = compilePrefixDisplay(composingRaw, composingCursorIndex.coerceIn(0, composingRaw.length)).length
+    fun displayCursorIndex(): Int = compilePrefixDisplay(
+        inputEngine.composingRaw(), composingCursorIndex.coerceIn(0, inputEngine.composingRawLength())).length
 
     /**
      * Maps a display offset back to the raw buffer offset. Used after display-level
@@ -967,15 +945,15 @@ class ImeInputConnectionController(
         if (typed.isNotEmpty() && typed.all { it.isUpperCase() }) expansion.uppercase() else expansion
 
     fun commitAndReset(wordBreak: String = "") {
-        if (composingRaw.isNotEmpty()) {
+        if (inputEngine.isComposing()) {
             val ic = service.currentInputConnection
             if (ic != null) {
                 ic.beginBatchEdit()
                 try {
                     selectionGuard.clear()
-                    val raw = composingRaw.toString()
+                    val raw = inputEngine.composingRaw().toString()
                     val macroExpanded = tryExpandMacro(raw, wordBreak)
-                    val outputText = macroExpanded ?: (if (!isVietnamese) raw + wordBreak else compileRawDisplay() + wordBreak)
+                    val outputText = macroExpanded ?: (if (!inputEngine.isVietnamese) raw + wordBreak else compileRawDisplay() + wordBreak)
 
                     if (isImmediateCommitMode()) {
                         val lastLen = lastSetComposingText?.length ?: 0
