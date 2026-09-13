@@ -11,6 +11,11 @@ enum class Tone(val index: Int) {
     TILDE(4),  // tilde ('x')
     DOT(5);    // dot below ('j')
 
+    /** Telex key that produces this tone ('z' clears: [NONE]). */
+    fun toKey(): Char? = when (this) {
+        ACUTE -> 's'; GRAVE -> 'f'; HOOK -> 'r'; TILDE -> 'x'; DOT -> 'j'; NONE -> null
+    }
+
     companion object {
         fun fromKey(c: Char): Tone? = when (c.lowercaseChar()) {
             's' -> ACUTE
@@ -51,10 +56,3 @@ data class EngineOptions(
     var directW: Boolean = false,
     var oldTonePlacement: Boolean = false
 )
-
-
-enum class TonePlacement {
-    LEGACY,
-    MODERN
-}
-

@@ -55,7 +55,6 @@ class ImeInputConnectionController(
     }
 
     var lastSetComposingText: String? = null
-    var activeComposingShiftState = 0 // 0: lowercase, 1: title case, 2: uppercase (caps lock)
     private var lastShiftTime = 0L
     var isSelecting: Boolean = false
     var lastKeyPressTime = 0L
@@ -356,13 +355,9 @@ class ImeInputConnectionController(
     var lastExpandedMacro: MacroExpansionRecord? = null
 
 
-    var lastCommittedChar: Char? = null
-    var lastCommittedSeparator: String? = null
-
     private fun recordImeCommit(word: String) {
         val trimmed = word.trim()
         if (trimmed.isNotEmpty()) {
-            lastCommittedChar = trimmed.lastOrNull()
             lastImeCommit = ImeCommitRecord(
                 word = VietnameseUnicode.normalizeNfc(trimmed),
                 timestamp = System.currentTimeMillis()
@@ -374,13 +369,11 @@ class ImeInputConnectionController(
     fun clearState() {
         inputEngine.reset()
         lastSetComposingText = null
-        activeComposingShiftState = 0
         lastKeyPressTime = 0L
         composingStartInEditor = -1
         composingCursorIndex = 0
         selectionGuard.clear()
         lastExpandedMacro = null
-        lastCommittedSeparator = null
     }
 
     fun isVietnameseLetterChar(c: Char): Boolean {
@@ -606,7 +599,6 @@ class ImeInputConnectionController(
         ic.beginBatchEdit()
         try {
             selectionGuard.clear()
-            activeComposingShiftState = 0
             lastSetComposingText = null
             inputEngine.reset()
             if (isImmediateCommitMode()) {
@@ -678,8 +670,6 @@ class ImeInputConnectionController(
             commitAndReset()
             ic.commitText(separator, 1)
         }
-        lastCommittedChar = separator.lastOrNull()
-        lastCommittedSeparator = separator
         if (separator != " ") {
             recordImeCommit(separator)
         }
@@ -707,8 +697,6 @@ class ImeInputConnectionController(
                 return
             } else if (key == "ENTER") {
                 commitAndReset()
-                lastCommittedChar = '\n'
-                lastCommittedSeparator = "\n"
                 val editorInfo = service.currentInputEditorInfo
                 val inputType = editorInfo?.inputType ?: 0
                 val isMultiLine = (inputType and android.text.InputType.TYPE_MASK_CLASS) == android.text.InputType.TYPE_CLASS_TEXT &&
@@ -768,8 +756,6 @@ class ImeInputConnectionController(
                         commitAndReset()
                         ic.commitText(actualKey, 1)
                         service.lastCommittedWord = actualKey
-                        lastCommittedChar = actualKey.lastOrNull()
-                        lastCommittedSeparator = null
                         service.shiftController.consumeSingleShift()
                         service.evaluateAutoShift(forceIpc = false)
                     } else {
@@ -777,14 +763,9 @@ class ImeInputConnectionController(
                             val wordAtCursor = findWordAroundCursor(ic)
                             resolveCompositionAtCursor(ic, actualKey, wordAtCursor)
                         }
-                        if (!inputEngine.isComposing()) {
-                            activeComposingShiftState = service.shiftController.value
-                        }
                         val lastLen = lastSetComposingText?.length ?: 0
                         inputEngine.insertComposingKey(composingCursorIndex, actualKey[0])
                         composingCursorIndex += actualKey.length
-                        lastCommittedChar = actualKey.lastOrNull()
-                        lastCommittedSeparator = null
 
                         val casedDisplay = if (inputEngine.isVietnamese) {
                             inputEngine.toDisplayString()

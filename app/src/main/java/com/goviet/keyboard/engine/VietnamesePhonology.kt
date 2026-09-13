@@ -31,17 +31,6 @@ object VietnamesePhonology {
     fun isStopCoda(c: CharSequence, start: Int = 0, length: Int = c.length - start): Boolean =
         RimeMap.isStopCoda(c, start, length)
 
-    fun isValidCoda(coda: CharSequence, start: Int = 0, length: Int = coda.length - start): Boolean {
-        if (length == 0) return true
-        val c0 = coda[start].lowercaseChar()
-        if (length == 1) return c0 == 'm' || c0 == 'p' || c0 == 'n' || c0 == 't' || c0 == 'c'
-        if (length == 2) {
-            val c1 = coda[start + 1].lowercaseChar()
-            return (c0 == 'n' && (c1 == 'g' || c1 == 'h')) || (c0 == 'c' && c1 == 'h')
-        }
-        return false
-    }
-
     fun isValidOnset(o: CharSequence, start: Int = 0, length: Int = o.length - start): Boolean =
         OnsetMap.isValidOnset(o, start, length)
 
@@ -53,17 +42,4 @@ object VietnamesePhonology {
     fun determineTonePositionHash(rk: Long, old: Boolean, nl: Int = 0): Int = RimeMap.determineTonePositionHash(rk, old, nl)
     fun findTonePosition(onset: CharSequence, rime: CharSequence, old: Boolean): Int? = RimeMap.findTonePosition(onset, rime, old)
 
-    fun lookupVowelCombination(nucleus: String, char: Char): String? = RimeMap.combineNucleus(nucleus, char)
-
-    fun isValidWord(word: String): Boolean {
-        if (word.isEmpty()) return false
-        val stripped = VietnameseUnicode.stripToneFromWord(word)
-        val len = stripped.length
-        for (onsetLen in minOf(3, len) downTo 1) {
-            if (OnsetMap.isCompleteOnset(stripped, 0, onsetLen)) {
-                if (isValidRime(stripped, onsetLen, len - onsetLen)) return true
-            }
-        }
-        return isValidRime(stripped, 0, len)
-    }
 }

@@ -72,20 +72,6 @@ object RimeMap {
         return (length shl 25) or chars
     }
 
-    /**
-     * Compute the flat-map key for two concatenated substrings — zero allocation.
-     */
-    @JvmStatic
-    fun rimeKeyCat(a: CharSequence, aLen: Int, b: CharSequence, bLen: Int): Int {
-        var chars = 0
-        var i = 0
-        while (i < aLen) { chars = (chars shl 5) or charIndex(a[i]); i++ }
-        i = 0
-        while (i < bLen) { chars = (chars shl 5) or charIndex(b[i]); i++ }
-        val totalLen = aLen + bLen
-        return (totalLen shl 25) or chars
-    }
-
     // ── Incremental key building (hot-path helpers) ───────────────
     //
     // Extend an existing rime key with additional characters without
@@ -442,23 +428,9 @@ object RimeMap {
     fun toneOldAt(idx: Int): Int = (_data[idx].toInt() ushr 5) and 3
 
     /**
-     * Check if a tone is allowed for this rime.
-     * Stop codas (c, ch, p, t) only allow acute (sắc, 1) and dot (nặng, 5).
-     */
-    @JvmStatic
-    fun isToneAllowed(key: Int, tone: Int): Boolean {
-        val i = find(key)
-        if (i < 0) return false
-        val d = _data[i].toInt()
-        if (tone == 0) return true                           // NONE always OK
-        if ((d and 4) == 0) return true                      // non-stop: all tones OK
-        return tone == 1 || tone == 5                        // stop: only acute/dot (sắc/nặng)
-    }
-
-    /**
-     * Single-lookup check whether [key] is a valid prefix AND accepts [tone]:
-     * combines [isValidPrefix] + [isToneAllowed] into one table probe for the
-     * hot coda-building path.
+     * Single-lookup check whether [key] is a valid prefix AND accepts [tone] —
+     * one table probe.  Stop codas (c, ch, p, t) only allow acute (sắc, 1) and
+     * dot (nặng, 5); NONE (0) is always allowed.
      */
     @JvmStatic
     fun isValidPrefixWithTone(key: Int, tone: Int): Boolean {
@@ -658,21 +630,22 @@ object RimeMap {
     fun foldPos(code: Int): Int = code and 7
 
     /**
-     * Fold code for [foldKey] on the nucleus with packed [nucleusKey].
-     * Dispatches foldE/O/A/WPrimary by the fold key — thin key-based wrapper
-     * over the slot-based accessors.  Returns 0 when no fold applies.
+     * Fold code for [foldKey] on the nucleus slot from [foldSlot] — the single
+     * fold dispatch; returns 0 when no fold applies.
      */
     @JvmStatic
-    fun foldPrimary(nucleusKey: Int, foldKey: Char): Int {
-        val slot = foldSlot(nucleusKey)
-        return when (foldKey.lowercaseChar()) {
-            'e' -> foldE(slot)
-            'o' -> foldO(slot)
-            'a' -> foldA(slot)
-            'w' -> foldWPrimary(slot)
-            else -> 0
-        }
+    fun foldPrimaryAtSlot(slot: Int, foldKey: Char): Int = when (foldKey.lowercaseChar()) {
+        'e' -> foldE(slot)
+        'o' -> foldO(slot)
+        'a' -> foldA(slot)
+        'w' -> foldWPrimary(slot)
+        else -> 0
     }
+
+    /** Fold code for [foldKey] on the nucleus with packed [nucleusKey]. */
+    @JvmStatic
+    fun foldPrimary(nucleusKey: Int, foldKey: Char): Int =
+        foldPrimaryAtSlot(foldSlot(nucleusKey), foldKey)
 
     /**
      * Alt fold code (dual-variant uo→uơ/ươ) for the nucleus with [nucleusKey].
@@ -768,13 +741,13 @@ object RimeMap {
     @JvmStatic
     fun isRimeValidForTone(rime: String, tone: Tone): Boolean {
         if (rime.isEmpty()) return false
-        return isToneAllowed(rimeKey(rime), tone.index)
+        return isValidPrefixWithTone(rimeKey(rime), tone.index)
     }
 
     /** Validate that a rime (by precomputed key) is valid for a specific tone. */
     @JvmStatic
     fun isRimeHashValidForTone(key: Long, tone: Tone): Boolean =
-        isToneAllowed(key.toInt(), tone.index)
+        isValidPrefixWithTone(key.toInt(), tone.index)
 
     /** Determine tone position from a precomputed rime key — zero allocation. */
     @JvmStatic
@@ -876,13 +849,18 @@ object RimeMap {
         return isSyllablePrefixValid(ascii)
     }
 
+    /**
+     * Reduce [text] to lowercase ASCII for the prefix table.  Vietnamese letters
+     * (base + toned) go through the single [VietnameseUnicode] strip path; any
+     * remaining non-ASCII char falls back to NFD decomposition.
+     */
     private fun sylStripDiacritics(text: String): String {
         val sb = StringBuilder(text.length)
         for (c in text) {
-            val base = if (c.code < SYL_VIET_TO_ASCII.size) SYL_VIET_TO_ASCII[c.code] else null
-            if (base != null) { sb.append(base); continue }
             if (c.code in 0x61..0x7A) { sb.append(c); continue }
             if (c.code in 0x41..0x5A) { sb.append((c.code + 32).toChar()); continue }
+            val stripped = VietnameseUnicode.stripDiacritics(c)
+            if (stripped.lowercaseChar() != c.lowercaseChar()) { sb.append(stripped.lowercaseChar()); continue }
             val decomposed = java.text.Normalizer.normalize(c.toString(), java.text.Normalizer.Form.NFD)
             for (ch in decomposed) {
                 if (ch.code in 0x61..0x7A) { sb.append(ch); break }
@@ -890,26 +868,6 @@ object RimeMap {
             }
         }
         return sb.toString()
-    }
-
-    private val SYL_VIET_TO_ASCII: Array<Char?> = arrayOfNulls<Char?>(0x1EF9 + 1).also { arr ->
-        val m = mapOf(
-            'ă' to 'a', 'â' to 'a', 'đ' to 'd', 'ê' to 'e', 'ô' to 'o',
-            'ơ' to 'o', 'ư' to 'u', 'á' to 'a', 'à' to 'a', 'ả' to 'a',
-            'ã' to 'a', 'ạ' to 'a', 'ắ' to 'a', 'ằ' to 'a', 'ẳ' to 'a',
-            'ẵ' to 'a', 'ặ' to 'a', 'ấ' to 'a', 'ầ' to 'a', 'ẩ' to 'a',
-            'ẫ' to 'a', 'ậ' to 'a', 'é' to 'e', 'è' to 'e', 'ẻ' to 'e',
-            'ẽ' to 'e', 'ẹ' to 'e', 'ế' to 'e', 'ề' to 'e', 'ể' to 'e',
-            'ễ' to 'e', 'ệ' to 'e', 'í' to 'i', 'ì' to 'i', 'ỉ' to 'i',
-            'ĩ' to 'i', 'ị' to 'i', 'ó' to 'o', 'ò' to 'o', 'ỏ' to 'o',
-            'õ' to 'o', 'ọ' to 'o', 'ố' to 'o', 'ồ' to 'o', 'ổ' to 'o',
-            'ỗ' to 'o', 'ộ' to 'o', 'ớ' to 'o', 'ờ' to 'o', 'ở' to 'o',
-            'ỡ' to 'o', 'ợ' to 'o', 'ú' to 'u', 'ù' to 'u', 'ủ' to 'u',
-            'ũ' to 'u', 'ụ' to 'u', 'ứ' to 'u', 'ừ' to 'u', 'ử' to 'u',
-            'ữ' to 'u', 'ự' to 'u', 'ý' to 'y', 'ỳ' to 'y', 'ỷ' to 'y',
-            'ỹ' to 'y', 'ỵ' to 'y',
-        )
-        for ((k, v) in m) arr[k.code] = v
     }
     private val EMBEDDED = arrayOf(
         "a", "ac", "ach", "ai", "am", "an", "ang", "anh",

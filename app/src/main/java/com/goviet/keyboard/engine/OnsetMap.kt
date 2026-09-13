@@ -58,7 +58,7 @@ object OnsetMap {
     private lateinit var _foldKeySet: BooleanArray  // fast pre-check: chars that have fold data
     // Data byte layout (only bits 0 and 2 are currently used):
     //   bit 0: isComplete — every stored entry is a complete onset; prefix
-    //          detection for composition is handled by isPrefixOfCompound
+    //          detection for composition is handled by isConsonant
     //   bit 2: allows the OPEN rime "uơ" (huơ, thuở, khuơ, quơ, luơ…)
     //
     // `_fold[slot]` carries the Telex fold target for the onset (only d→đ
@@ -75,7 +75,7 @@ object OnsetMap {
         _foldKey = CharArray(TABLE_SIZE)
         _foldKeySet = BooleanArray(512)
         // Insert all complete onsets (NO prefix entries for single chars
-        // like 'q' — those are handled by isPrefixOfCompound).
+        // like 'q' — those are handled by isConsonant).
         for (o in ALL_ONSETS) insertOr(onsetKey(o), 0x01)
         // Onsets after which the open rime "uơ" is real (list derived from the
         // actual words containing the rime "uơ": huơ, thuở, khuơ, quơ, luơ).
@@ -131,22 +131,7 @@ object OnsetMap {
     fun isValidOnset(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean =
         length == 0 || find(onsetKey(onset, start, length)) >= 0
 
-    /** Single character is valid onset or prefix of one. */
-    fun isValidOnsetSingle(c: Char): Boolean = find(onsetKey(c)) >= 0
-
-    // First chars of compound onsets ("th","tr","ch","ph","kh","gh","gi","qu","ng","nh","ngh").
-    // Char-SET (not charIndex) so 'q' never collides with 'a' — both would
-    // encode to index 0 in the 5-bit alphabet.
-    private val COMPOUND_FIRST_CHARS = ALL_ONSETS.filter { it.length > 1 }.map { it[0].lowercaseChar() }.toSet()
-
-    /**
-     * Single char is the first char of a compound onset (e.g. 't' in "th").
-     * 'q' is included because "qu" is a valid onset — but 'q' is NOT returned
-     * as a complete onset, only as a prefix that can grow into "qu".
-     */
-    fun isPrefixOfCompound(c: Char): Boolean = c.lowercaseChar() in COMPOUND_FIRST_CHARS
-
-    // Single-char check that combines isValidOnsetSingle + isPrefixOfCompound
+    // Single-char check that combines "valid onset" + "first char of a compound"
     // into ONE BooleanArray(512) lookup — hot path in the composer loop.
     private val CONSONANT_BOOL = BooleanArray(512).also { arr ->
         for (o in ALL_ONSETS) if (o.length == 1) arr[o[0].lowercaseChar().code] = true

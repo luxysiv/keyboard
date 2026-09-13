@@ -75,6 +75,19 @@ object VietnameseUnicode {
         }
     }
 
+    /**
+     * Inverse of [applyTone] — the tone that produced [char], or NONE when the
+     * char carries no tone.  Single source: the [applyTone] table.
+     */
+    fun toneOf(char: Char): Tone {
+        val base = stripTone(char)
+        if (base == char) return Tone.NONE
+        for (t in Tone.values()) {
+            if (t != Tone.NONE && applyTone(base, t) == char) return t
+        }
+        return Tone.NONE
+    }
+
     fun stripToneFromWord(word: String): String {
         val len = word.length
         if (len == 0) return ""

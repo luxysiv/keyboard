@@ -119,11 +119,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         }
     }
 
-    data class SyncResult(
-        var displayText: String = "",
-        var isVietnamese: Boolean = true
-    )
-
     // ── Shared pools ───────────────────────────────────────────────
     private val replayState = SyllableState()
     private val stringOut = OwnedBuffer()
@@ -580,7 +575,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                                 if (foldedNuc != out.nucleus) {
                                     val deferredRk = RimeMap.keyCat(foldedNuc, foldedNuc.length, c)
                                     if (RimeMap.isValidPrefix(deferredRk) &&
-                                        RimeMap.isToneAllowed(deferredRk, targetTone.index)) {
+                                        RimeMap.isValidPrefixWithTone(deferredRk, targetTone.index)) {
                                         out.nucleus = foldedNuc
                                         ctx.nucKey = RimeMap.rimeKey(out.nucleus)
                                         ctx.fold.key = foldKey
@@ -603,14 +598,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return 1
     }
 
-    /** Primary fold code for [foldKey] on the nucleus slot obtained via [RimeMap.foldSlot]; 0 = none. */
-    private fun foldPrimaryForSlot(slot: Int, foldKey: Char): Int = when (foldKey.lowercaseChar()) {
-        'e' -> RimeMap.foldE(slot)
-        'o' -> RimeMap.foldO(slot)
-        'a' -> RimeMap.foldA(slot)
-        'w' -> RimeMap.foldWPrimary(slot)
-        else -> 0
-    }
+    /** Primary fold code for [foldKey] on a nucleus slot — single dispatch in RimeMap. */
+    private fun foldPrimaryForSlot(slot: Int, foldKey: Char): Int =
+        RimeMap.foldPrimaryAtSlot(slot, foldKey)
 
     /**
      * Apply the Telex fold for [c] by reading the fold-target data baked into
@@ -791,37 +781,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return buf.toStringVal()
     }
 
-    fun loadSyllable(state: SyllableState, isStaticReDerive: Boolean) {
-        processState.onset = state.onset
-        processState.nucleus = state.nucleus
-        processState.coda = state.coda
-        processState.tone = state.tone
-        processState.rawSuffix = state.rawSuffix
-        processRaw.clear()
-        processRaw.append(state.onset)
-        processRaw.append(state.nucleus)
-        processRaw.append(state.coda)
-        processRaw.append(state.rawSuffix)
-    }
-
-    fun syncStateFromRaw(raw: String, mode: CompositionMode, buf: SyncResult) {
-        buf.isVietnamese = mode == CompositionMode.VIETNAMESE
-        if (mode == CompositionMode.LITERAL) {
-            buf.displayText = raw
-        } else {
-            val tempState = SyllableState()
-            resegment(raw, tempState)
-            buf.displayText = tempState.toDisplayString(options.oldTonePlacement)
-        }
-    }
-
     // ================================================================
     // REPLAY / COMPILE
     // ================================================================
-
-    fun replayRawToState(raw: CharSequence, state: SyllableState) {
-        resegment(raw, state)
-    }
 
     fun compileRaw(raw: CharSequence, vietnamese: Boolean, out: OwnedBuffer) {
         compileRaw(raw, vietnamese, out, Int.MAX_VALUE)
@@ -866,7 +828,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var detectedTone = Tone.NONE
         val untonedChars = StringBuilder()
         for (c in nfcWord) {
-            val t = extractToneFromChar(c)
+            val t = VietnameseUnicode.toneOf(c)
             if (t != Tone.NONE && detectedTone == Tone.NONE) detectedTone = t
             untonedChars.append(VietnameseUnicode.stripTone(c))
         }
@@ -952,26 +914,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             sb.append(nucleusToRawKeystroke(nucleus))
             val nucAllUpper = nucleus.isNotEmpty() && nucleus.all { it.isUpperCase() }
             sb.append(coda)
-            val toneKey = when (validTone) {
-                Tone.ACUTE -> 's'; Tone.GRAVE -> 'f'; Tone.HOOK -> 'r'
-                Tone.TILDE -> 'x'; Tone.DOT -> 'j'; Tone.NONE -> null
-            }
+            val toneKey = validTone.toKey()
             if (toneKey != null) sb.append(if (nucAllUpper) toneKey.uppercaseChar() else toneKey)
             VietnameseUnicode.applyCasingFromRaw(sb.toString(), word)
         } else { word }
 
         return AdoptResult(isValid, onset.length, canonicalRaw)
-    }
-
-    private fun extractToneFromChar(c: Char): Tone {
-        return when (c.lowercaseChar()) {
-            'á', 'ắ', 'ấ', 'é', 'ế', 'í', 'ó', 'ố', 'ớ', 'ú', 'ứ', 'ý' -> Tone.ACUTE
-            'à', 'ằ', 'ầ', 'è', 'ề', 'ì', 'ò', 'ồ', 'ờ', 'ù', 'ừ', 'ỳ' -> Tone.GRAVE
-            'ả', 'ẳ', 'ẩ', 'ẻ', 'ể', 'ỉ', 'ỏ', 'ổ', 'ở', 'ủ', 'ử', 'ỷ' -> Tone.HOOK
-            'ã', 'ẵ', 'ẫ', 'ẽ', 'ễ', 'ĩ', 'õ', 'ỗ', 'ỡ', 'ũ', 'ữ', 'ỹ' -> Tone.TILDE
-            'ạ', 'ặ', 'ậ', 'ẹ', 'ệ', 'ị', 'ọ', 'ộ', 'ợ', 'ụ', 'ự', 'ỵ' -> Tone.DOT
-            else -> Tone.NONE
-        }
     }
 
     // ================================================================
