@@ -755,12 +755,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         return processState.toDisplayString(options.oldTonePlacement)
     }
 
-    /**
-     * Preserves [text] verbatim — Telex raw keys are only ever transformed by
-     * [resegment]; a literal re-derive is identity by definition.
-     */
-    fun reDerive(text: String): String = text
-
     // ================================================================
     // REPLAY / COMPILE
     // ================================================================
@@ -913,12 +907,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         canonicalRawIfRoundTrips(adoptWord(display), display)
 
     // ================================================================
-    // PUBLIC: process / processString
+    // PUBLIC: process
     // ================================================================
 
-    fun process(raw: String): String = processString(raw)
-
-    fun processString(raw: String): String {
+    fun process(raw: String): String {
         if (raw.isEmpty()) return ""
         compileRaw(raw, true, stringOut)
         return stringOut.toStringVal()

@@ -979,8 +979,10 @@ class VietnameseComposerTest {
 
     @Test
     fun testForeignWordNotCorrupted_Deepseek() {
-        val result = engine.reDerive("deepseek")
-        assertEquals("deepseek", result)
+        // "deepseek" cannot round-trip through the Telex kernel — the adoption
+        // gate returns null so callers keep the word literal instead of
+        // re-transforming it as Telex raw.
+        assertTrue(engine.adoptRoundTrip("deepseek") == null)
     }
 
     @Test
@@ -1042,7 +1044,7 @@ class VietnameseComposerTest {
     }
 
     @Test
-    fun testProcessStringDoesNotCorruptInteractiveState() {
+    fun testProcessDoesNotCorruptInteractiveState() {
         engine.reset()
         engine.processKey('d')
         engine.processKey('d')
@@ -1051,7 +1053,7 @@ class VietnameseComposerTest {
         val lastResult = engine.processKey('g')
         assertEquals("đang", lastResult.text)
 
-        // Gọi processString độc lập không được làm ảnh hưởng đến composingText hay undoStack
+        // Gọi process độc lập không được làm ảnh hưởng đến composingText hay undoStack
         val result = engine.process("tiếng việt")
         assertEquals("tiếng việt", result)
 
@@ -1062,8 +1064,10 @@ class VietnameseComposerTest {
 
     @Test
     fun testForeignWordNotCorrupted_Other() {
-        assertEquals("keep", engine.reDerive("keep"))
-        assertEquals("book", engine.reDerive("book"))
+        // keep/book cannot round-trip (raw "keep"/"book" replay transformed),
+        // so the adoption gate returns null and callers keep them literal.
+        assertTrue(engine.adoptRoundTrip("keep") == null)
+        assertTrue(engine.adoptRoundTrip("book") == null)
     }
 
     @Test
@@ -1079,9 +1083,6 @@ class VietnameseComposerTest {
         // The AdoptResult-based gate mirrors the same decision.
         assertEquals("toan", engine.canonicalRawIfRoundTrips(engine.adoptWord("toan"), "toan"))
         assertEquals(true, engine.canonicalRawIfRoundTrips(engine.adoptWord("confirm"), "confirm") == null)
-        // reDerive is identity by contract.
-        assertEquals("warm", engine.reDerive("warm"))
-        assertEquals("keep", engine.reDerive("keep"))
     }
 
     @Test
@@ -1732,7 +1733,7 @@ class VietnameseComposerTest {
 //         )
 //         for (w in foreignOrSuspiciousWords) {
 //             assertFalse("Word '$w' must not be recognized as confident Vietnamese", EditedVietnameseRecognizer.canRecompose(w))
-//             assertEquals("Word '$w' must be preserved verbatim by reDerive", w, engine.reDerive(w))
+//             // foreign words are kept literal by the adoption gate (reDerive removed)
 //         }
 //     }
 // 
