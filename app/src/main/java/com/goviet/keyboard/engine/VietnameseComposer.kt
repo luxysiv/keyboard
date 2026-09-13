@@ -94,12 +94,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (c0 != 'm' && c0 != 'p' && c0 != 'n' && c0 != 't' && c0 != 'c') return -1
             val key = RimeMap.rimeKey(nucleus)
             for (fk in charArrayOf('e', 'o', 'a', 'w')) {
-                val fold = RimeMap.foldPrimary(key, fk)
-                if (fold == 0) continue
-                val folded = RimeMap.applyFold(nucleus, fold)
-                if (folded == nucleus) continue
-                val rk = RimeMap.keyCat(folded, folded.length, rawSuffix, 1)
-                if (RimeMap.isValidPrefix(rk)) return (nucleus.length - 1).coerceAtLeast(0)
+                if (RimeMap.foldCodaValid(nucleus, key, fk, c0) != null) {
+                    return (nucleus.length - 1).coerceAtLeast(0)
+                }
             }
             return -1
         }
@@ -540,21 +537,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (out.coda.isEmpty() && pos + 1 < len) {
                 val nextChar = raw[pos + 1].lowercaseChar()
                 if (RimeMap.isFoldKey(nextChar)) {
-                    val fold = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), nextChar)
-                    if (fold != 0) {
-                        val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
-                        if (foldedNuc != out.nucleus) {
-                            val deferredRk = RimeMap.keyCat(foldedNuc, foldedNuc.length, c)
-                            if (RimeMap.isValidPrefixWithTone(deferredRk, out.tone.index)) {
-                                out.nucleus = foldedNuc
-                                ctx.nucKey = RimeMap.rimeKey(out.nucleus)
-                                ctx.fold.key = nextChar
-                                ctx.fold.rawPos = pos + 1
-                                out.coda += c
-                                ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
-                                return 2  // skip coda char + fold key
-                            }
-                        }
+                    val foldedNuc = RimeMap.foldCodaValid(out.nucleus, ctx.nucKey, nextChar, c, out.tone.index)
+                    if (foldedNuc != null) {
+                        out.nucleus = foldedNuc
+                        ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                        ctx.fold.key = nextChar
+                        ctx.fold.rawPos = pos + 1
+                        out.coda += c
+                        ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
+                        return 2  // skip coda char + fold key
                     }
                 }
                 // Deferred fold after a tone key: coda is rejected now but valid once
@@ -565,24 +556,17 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (RimeMap.isFoldKey(foldKey)) {
                         val targetTone = Tone.fromKey(toneKey)
                         if (targetTone != null && targetTone != Tone.NONE) {
-                            val fold = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
-                            if (fold != 0) {
-                                val foldedNuc = RimeMap.applyFold(out.nucleus, fold)
-                                if (foldedNuc != out.nucleus) {
-                                    val deferredRk = RimeMap.keyCat(foldedNuc, foldedNuc.length, c)
-                                    if (RimeMap.isValidPrefix(deferredRk) &&
-                                        RimeMap.isValidPrefixWithTone(deferredRk, targetTone.index)) {
-                                        out.nucleus = foldedNuc
-                                        ctx.nucKey = RimeMap.rimeKey(out.nucleus)
-                                        ctx.fold.key = foldKey
-                                        ctx.fold.rawPos = pos + 2
-                                        out.coda += c
-                                        ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
-                                        out.tone = targetTone
-                                        ctx.lastToneKey = toneKey
-                                        return 3  // skip coda char + tone key + fold key
-                                    }
-                                }
+                            val foldedNuc = RimeMap.foldCodaValid(out.nucleus, ctx.nucKey, foldKey, c, targetTone.index)
+                            if (foldedNuc != null) {
+                                out.nucleus = foldedNuc
+                                ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                                ctx.fold.key = foldKey
+                                ctx.fold.rawPos = pos + 2
+                                out.coda += c
+                                ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
+                                out.tone = targetTone
+                                ctx.lastToneKey = toneKey
+                                return 3  // skip coda char + tone key + fold key
                             }
                         }
                     }

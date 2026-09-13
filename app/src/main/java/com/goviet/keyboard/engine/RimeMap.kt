@@ -404,6 +404,23 @@ object RimeMap {
     }
 
     /**
+     * Single source for the deferred-fold rule: fold [nucleus] with [foldKey];
+     * when the folded form plus [tail] is a valid prefix (accepting [toneIndex]),
+     * returns the folded nucleus — otherwise null.  Shared by the scan-time
+     * lookahead (tryCoda) and the display-time tone anchor (pendingFoldCodaIndex).
+     */
+    @JvmStatic
+    fun foldCodaValid(nucleus: String, nucleusKey: Int, foldKey: Char, tail: Char, toneIndex: Int = 0): String? {
+        val fold = foldPrimaryAtSlot(foldSlot(nucleusKey), foldKey)
+        if (fold == 0) return null
+        val folded = applyFold(nucleus, fold)
+        if (folded == nucleus) return null
+        val rk = keyCat(folded, folded.length, tail)
+        if (!isValidPrefixWithTone(rk, toneIndex)) return null
+        return folded
+    }
+
+    /**
      * Compute the key for an extended rime (existing rime + one new char)
      * without re-encoding the whole string.  O(1).
      */
