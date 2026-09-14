@@ -159,9 +159,6 @@ class KeyboardRootView @JvmOverloads constructor(
         traditionalSettingsView.onBottomPaddingChange = {
             render()
         }
-        traditionalSettingsView.onLandscapeModeChange = {
-            render()
-        }
         traditionalSettingsView.onOpenFullSettings = {
             service.openSettings()
         }
@@ -434,7 +431,6 @@ class KeyboardRootView @JvmOverloads constructor(
                 traditionalSettingsView.keyStyle = AppPreferences.getKeyStyle()
                 traditionalSettingsView.themeMode = AppPreferences.getThemeMode()
                 traditionalSettingsView.bottomPaddingLevel = AppPreferences.getBottomPaddingLevel()
-                traditionalSettingsView.landscapeMode = landscapeMode
             }
             "CLIPBOARD" -> {
                 traditionalClipboardView.items = clipboardItems
@@ -1147,7 +1143,16 @@ class UnifiedTopHeaderView(context: Context, private val rootView: KeyboardRootV
                     }
 
                     val curLandscapeMode = AppPreferences.getLandscapeMode()
-                    drawLandscapeModeHeaderIcon(canvas, curLandscapeMode, modeCx, modeCy, textColor)
+                    val iconId = when (curLandscapeMode) {
+                        AppPreferences.LANDSCAPE_SPLIT -> "keyboard_split"
+                        AppPreferences.LANDSCAPE_COMPACT -> "keyboard_compact"
+                        else -> "keyboard_full"
+                    }
+                    val modeScale = if (pressedButtonId == "layout_mode") 0.92f else 1.0f
+                    canvas.save()
+                    canvas.scale(modeScale, modeScale, modeCx, modeCy)
+                    IconDrawer.draw(canvas, context, iconId, modeCx, modeCy, 20f * density, textColor)
+                    canvas.restore()
                 }
 
                 // Shortcuts Area & Divider
@@ -1455,49 +1460,5 @@ class UnifiedTopHeaderView(context: Context, private val rootView: KeyboardRootV
             }
         }
         return true
-    }
-
-    private fun drawLandscapeModeHeaderIcon(canvas: Canvas, mode: String, cx: Float, cy: Float, color: Int) {
-        val strokePaint = paint
-        strokePaint.color = color
-        strokePaint.style = Paint.Style.STROKE
-        strokePaint.strokeWidth = 1.5f * density
-
-        val r = 2f * density
-        when (mode) {
-            AppPreferences.LANDSCAPE_SPLIT -> {
-                val blockW = 6f * density
-                val blockH = 12f * density
-                val gap = 6f * density
-
-                val leftRect = RectF(cx - gap / 2f - blockW, cy - blockH / 2f, cx - gap / 2f, cy + blockH / 2f)
-                val rightRect = RectF(cx + gap / 2f, cy - blockH / 2f, cx + gap / 2f + blockW, cy + blockH / 2f)
-
-                canvas.drawRoundRect(leftRect, r, r, strokePaint)
-                canvas.drawRoundRect(rightRect, r, r, strokePaint)
-
-                val dotH = 4f * density
-                canvas.drawLine(cx, cy - dotH / 2f, cx, cy + dotH / 2f, strokePaint)
-            }
-            AppPreferences.LANDSCAPE_COMPACT -> {
-                val blockW = 10f * density
-                val blockH = 12f * density
-                val insetDist = 9f * density
-                val barH = 12f * density
-
-                val centerRect = RectF(cx - blockW / 2f, cy - blockH / 2f, cx + blockW / 2f, cy + blockH / 2f)
-                canvas.drawRoundRect(centerRect, r, r, strokePaint)
-
-                canvas.drawLine(cx - insetDist, cy - barH / 2f, cx - insetDist, cy + barH / 2f, strokePaint)
-                canvas.drawLine(cx + insetDist, cy - barH / 2f, cx + insetDist, cy + barH / 2f, strokePaint)
-            }
-            else -> {
-                val blockW = 20f * density
-                val blockH = 12f * density
-                val fullRect = RectF(cx - blockW / 2f, cy - blockH / 2f, cx + blockW / 2f, cy + blockH / 2f)
-                canvas.drawRoundRect(fullRect, r, r, strokePaint)
-                canvas.drawLine(cx - 5f * density, cy + 2f * density, cx + 5f * density, cy + 2f * density, strokePaint)
-            }
-        }
     }
 }

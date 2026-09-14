@@ -58,21 +58,13 @@
     <string name="pref_submenu_style">KIỂU DÁNG PHÍM</string>
     <string name="pref_submenu_theme">GIAO DIỆN BÀN PHÍM</string>
     <string name="pref_submenu_padding">KHOẢNG CÁCH CẠNH DƯỚI</string>
-    <string name="pref_submenu_landscape">CHẾ ĐỘ XOAY NGANG</string>
 
     <string name="pref_cat_style">KIỂU PHÍM</string>
     <string name="pref_cat_theme">GIAO DIỆN</string>
     <string name="pref_cat_padding">CẠNH DƯỚI</string>
-    <string name="pref_cat_landscape">XOAY NGANG</string>
     <string name="pref_cat_macro">GÕ TẮT</string>
     <string name="pref_cat_auto_capitalize">VIẾT HOA ĐẦU CÂU</string>
 
-    <string name="pref_landscape_split">CHIA ĐÔI (SPLIT)</string>
-    <string name="pref_landscape_compact">LỀ ĐỆM HAI BÊN</string>
-    <string name="pref_landscape_full">TRÀN VIỀN</string>
-    <string name="pref_landscape_split_sub">Chia đôi</string>
-    <string name="pref_landscape_compact_sub">Lề đệm</string>
-    <string name="pref_landscape_full_sub">Tràn viền</string>
     <string name="toast_landscape_split">Bàn phím chia đôi (Split Keyboard)</string>
     <string name="toast_landscape_compact">Lề đệm hai bên (Side Insets)</string>
     <string name="toast_landscape_full">Bàn phím tràn viền (Full)</string>
