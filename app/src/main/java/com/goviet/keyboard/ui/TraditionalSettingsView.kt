@@ -65,13 +65,16 @@ open class TraditionalSettingsView @JvmOverloads constructor(
     var onKeyStyleChange: ((Int) -> Unit)? = null
     var onThemeChange: (() -> Unit)? = null
     var onBottomPaddingChange: (() -> Unit)? = null
+    var onLandscapeModeChange: ((String) -> Unit)? = null
     var onOpenFullSettings: (() -> Unit)? = null
+
+    var landscapeMode: String = AppPreferences.getLandscapeMode()
 
     private val keycapTextPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     // Submenu architecture (Submenus with multiple choices)
     enum class SubMenu {
-        NONE, STYLE, THEME, PADDING
+        NONE, STYLE, THEME, PADDING, LANDSCAPE
     }
 
     var activeSubMenu: SubMenu = SubMenu.NONE
@@ -88,6 +91,7 @@ open class TraditionalSettingsView @JvmOverloads constructor(
         CategoryItem(R.string.pref_cat_style, "border_style"),
         CategoryItem(R.string.pref_cat_theme, "palette"),
         CategoryItem(R.string.pref_cat_padding, "height"),
+        CategoryItem(R.string.pref_cat_landscape, "keyboard"),
         CategoryItem(R.string.pref_cat_macro, "build", isToggle = true, toggleIndex = 0),
         CategoryItem(R.string.pref_cat_auto_capitalize, "typing_style", isToggle = true, toggleIndex = 1)
     )
@@ -107,13 +111,25 @@ open class TraditionalSettingsView @JvmOverloads constructor(
     private var pressedRectIndex: Int = -1
 
     // Bounds for layout & click targets
-    private val catCardRects = List(5) { RectF() }
+    private val catCardRects = List(6) { RectF() }
 
     private val styleButtonRects = List(3) { RectF() }
     private val styleLabelResIds = listOf(R.string.pref_style_border, R.string.pref_style_flat, R.string.pref_style_none)
 
     private val themeButtonRects = List(4) { RectF() }
     private val paddingButtonRects = List(4) { RectF() }
+
+    private val landscapeModes = listOf(
+        AppPreferences.LANDSCAPE_SPLIT,
+        AppPreferences.LANDSCAPE_COMPACT,
+        AppPreferences.LANDSCAPE_FULL
+    )
+    private val landscapeLabelResIds = listOf(
+        R.string.pref_landscape_split,
+        R.string.pref_landscape_compact,
+        R.string.pref_landscape_full
+    )
+    private val landscapeButtonRects = List(3) { RectF() }
 
     // Preallocated drawing structures
     private val simulatedShadowRect = RectF()
@@ -234,13 +250,12 @@ open class TraditionalSettingsView @JvmOverloads constructor(
             catCardRects[i].set(left, mainTop, left + colWidth3, mainTop + cellHeight)
         }
 
-        // Row 2: 2 cards for Fast 1-Tap Toggles (Gõ tắt, Viết hoa đầu câu)
-        val colWidth2 = (usableWidth - itemSpacing) / 2f
+        // Row 2: 3 cards (Xoay ngang, Gõ tắt, Viết hoa đầu câu)
         val row2Top = mainTop + cellHeight + itemSpacing
-        for (i in 3..4) {
+        for (i in 3..5) {
             val col = i - 3
-            val left = padding + col * (colWidth2 + itemSpacing)
-            catCardRects[i].set(left, row2Top, left + colWidth2, row2Top + cellHeight)
+            val left = padding + col * (colWidth3 + itemSpacing)
+            catCardRects[i].set(left, row2Top, left + colWidth3, row2Top + cellHeight)
         }
 
         val totalContentHeight = cellHeight * 2 + itemSpacing
@@ -272,6 +287,14 @@ open class TraditionalSettingsView @JvmOverloads constructor(
         paddingButtonRects[1].set(padding + subColW + itemSpacing, mainTop, padding + subColW * 2 + itemSpacing, mainTop + subRowH)
         paddingButtonRects[2].set(padding, mainTop + subRowH + itemSpacing, padding + subColW, mainTop + subRowH * 2 + itemSpacing)
         paddingButtonRects[3].set(padding + subColW + itemSpacing, mainTop + subRowH + itemSpacing, padding + subColW * 2 + itemSpacing, mainTop + subRowH * 2 + itemSpacing)
+
+        // D. LANDSCAPE SUBMENU (3 columns)
+        val landWidth = (usableWidth - itemSpacing * 2) / 3f
+        var lX = padding
+        for (i in 0..2) {
+            landscapeButtonRects[i].set(lX, mainTop + 2f * density, lX + landWidth, mainTop + 2f * density + subMenuHeight - 8f * density)
+            lX += landWidth + itemSpacing
+        }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -428,6 +451,7 @@ open class TraditionalSettingsView @JvmOverloads constructor(
                         0 -> when (keyStyle) { 0 -> context.getString(R.string.pref_style_border_sub); 1 -> context.getString(R.string.pref_style_flat_sub); else -> context.getString(R.string.pref_style_none_sub) }
                         1 -> when (themeMode) { "system" -> context.getString(R.string.pref_theme_system_sub); "light" -> context.getString(R.string.pref_theme_light_sub); "dark" -> context.getString(R.string.pref_theme_dark_sub); "dynamic" -> context.getString(R.string.pref_theme_dynamic_sub); else -> context.getString(R.string.pref_theme_default_sub) }
                         2 -> when (bottomPaddingLevel) { 1 -> context.getString(R.string.pref_padding_medium_sub); 2 -> context.getString(R.string.pref_padding_high_sub); 3 -> context.getString(R.string.pref_padding_very_high_sub); else -> context.getString(R.string.pref_theme_default_sub) }
+                        3 -> when (landscapeMode) { AppPreferences.LANDSCAPE_SPLIT -> context.getString(R.string.pref_landscape_split_sub); AppPreferences.LANDSCAPE_COMPACT -> context.getString(R.string.pref_landscape_compact_sub); else -> context.getString(R.string.pref_landscape_full_sub) }
                         else -> ""
                     }
                 } else {
@@ -447,6 +471,7 @@ open class TraditionalSettingsView @JvmOverloads constructor(
                         0 -> keyStyle != 0
                         1 -> themeMode != "system"
                         2 -> bottomPaddingLevel != 0
+                        3 -> landscapeMode != AppPreferences.LANDSCAPE_SPLIT
                         else -> false
                     }
                 } else {
@@ -471,6 +496,7 @@ open class TraditionalSettingsView @JvmOverloads constructor(
                 SubMenu.STYLE -> context.getString(R.string.pref_submenu_style)
                 SubMenu.THEME -> context.getString(R.string.pref_submenu_theme)
                 SubMenu.PADDING -> context.getString(R.string.pref_submenu_padding)
+                SubMenu.LANDSCAPE -> context.getString(R.string.pref_submenu_landscape)
                 else -> ""
             }
             textPaint.color = getColorWithAlpha(textColor, alpha)
@@ -654,6 +680,115 @@ open class TraditionalSettingsView @JvmOverloads constructor(
                         }
                     }
                 }
+                SubMenu.LANDSCAPE -> {
+                    val dividerPaint = paint
+                    dividerPaint.color = getColorWithAlpha(if (isDark) 0x1AFFFFFF else 0x1A000000, alpha)
+                    dividerPaint.style = Paint.Style.STROKE
+                    dividerPaint.strokeWidth = 0.8f * density
+
+                    for (i in 0..2) {
+                        val rect = landscapeButtonRects[i]
+                        val isOptionSelected = (landscapeMode == landscapeModes[i])
+                        val isPressed = (pressedRectIndex == 100 + i)
+
+                        if (isPressed) {
+                            canvas.save()
+                            canvas.scale(0.96f, 0.96f, rect.centerX(), rect.centerY())
+                        }
+
+                        if (i < 2) {
+                            val divX = rect.right + itemSpacing / 2f
+                            canvas.drawLine(divX, mainTop + 8f * density, divX, mainTop + subMenuHeight - 16f * density, dividerPaint)
+                        }
+
+                        val cx = rect.centerX()
+                        val itemTintColor = if (isOptionSelected) activeAccentColor else subTextColor
+
+                        IconDrawer.draw(
+                            canvas = canvas,
+                            context = context,
+                            id = "keyboard",
+                            cx = cx,
+                            cy = rect.top + 16f * density,
+                            sizePx = 18f * density,
+                            tintColor = itemTintColor
+                        )
+
+                        textPaint.color = getColorWithAlpha(if (isOptionSelected) activeAccentColor else textColor, alpha)
+                        textPaint.textSize = 9.5f * density
+                        textPaint.typeface = boldTypeface
+                        textPaint.textAlign = Paint.Align.CENTER
+                        canvas.drawText(context.getString(landscapeLabelResIds[i]), cx, rect.top + 36f * density, textPaint)
+
+                        val previewRect = RectF(cx - 24f * density, rect.centerY() - 6f * density, cx + 24f * density, rect.centerY() + 16f * density)
+                        drawLandscapeModePreview(canvas, previewRect, i, isOptionSelected, alpha)
+
+                        val subLabel = when (i) {
+                            0 -> context.getString(R.string.pref_landscape_split_sub)
+                            1 -> context.getString(R.string.pref_landscape_compact_sub)
+                            else -> context.getString(R.string.pref_landscape_full_sub)
+                        }
+                        textPaint.color = getColorWithAlpha(subTextColor, alpha)
+                        textPaint.textSize = 8f * density
+                        textPaint.typeface = normalTypeface
+                        textPaint.textAlign = Paint.Align.CENTER
+                        canvas.drawText(subLabel, cx, rect.bottom - 8f * density, textPaint)
+
+                        if (isOptionSelected) {
+                            drawCheckmarkBadge(canvas, rect, alpha)
+                        }
+
+                        if (isPressed) {
+                            canvas.restore()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun drawLandscapeModePreview(canvas: Canvas, bounds: RectF, modeIndex: Int, isSelected: Boolean, alpha: Int) {
+        val stroke = paint
+        val tint = if (isSelected) activeAccentColor else (if (isDark) 0xFF4B5563.toInt() else 0xFFD1D5DB.toInt())
+        val fillTint = if (isSelected) getColorWithAlpha(activeAccentColor, (alpha * 0.25f).toInt()) else getColorWithAlpha(tint, (alpha * 0.15f).toInt())
+
+        stroke.color = getColorWithAlpha(tint, alpha)
+        stroke.style = Paint.Style.STROKE
+        stroke.strokeWidth = 1.2f * density
+
+        val r = 3f * density
+
+        when (modeIndex) {
+            0 -> {
+                val halfW = (bounds.width() - 8f * density) / 2f
+                val leftBlock = RectF(bounds.left, bounds.top, bounds.left + halfW, bounds.bottom)
+                val rightBlock = RectF(bounds.right - halfW, bounds.top, bounds.right, bounds.bottom)
+
+                paint.style = Paint.Style.FILL
+                paint.color = fillTint
+                canvas.drawRoundRect(leftBlock, r, r, paint)
+                canvas.drawRoundRect(rightBlock, r, r, paint)
+
+                canvas.drawRoundRect(leftBlock, r, r, stroke)
+                canvas.drawRoundRect(rightBlock, r, r, stroke)
+            }
+            1 -> {
+                val inset = bounds.width() * 0.2f
+                val centerBlock = RectF(bounds.left + inset, bounds.top, bounds.right - inset, bounds.bottom)
+
+                paint.style = Paint.Style.FILL
+                paint.color = fillTint
+                canvas.drawRoundRect(centerBlock, r, r, paint)
+                canvas.drawRoundRect(centerBlock, r, r, stroke)
+
+                canvas.drawLine(bounds.left + 2f * density, bounds.top, bounds.left + 2f * density, bounds.bottom, stroke)
+                canvas.drawLine(bounds.right - 2f * density, bounds.top, bounds.right - 2f * density, bounds.bottom, stroke)
+            }
+            else -> {
+                paint.style = Paint.Style.FILL
+                paint.color = fillTint
+                canvas.drawRoundRect(bounds, r, r, paint)
+                canvas.drawRoundRect(bounds, r, r, stroke)
             }
         }
     }
@@ -719,6 +854,15 @@ open class TraditionalSettingsView @JvmOverloads constructor(
                                 }
                             }
                         }
+                        SubMenu.LANDSCAPE -> {
+                            for (i in 0..2) {
+                                if (landscapeButtonRects[i].contains(x, y)) {
+                                    pressedRectIndex = 100 + i
+                                    invalidate()
+                                    break
+                                }
+                            }
+                        }
                         else -> {}
                     }
                 }
@@ -769,6 +913,7 @@ open class TraditionalSettingsView @JvmOverloads constructor(
                                     0 -> SubMenu.STYLE
                                     1 -> SubMenu.THEME
                                     2 -> SubMenu.PADDING
+                                    3 -> SubMenu.LANDSCAPE
                                     else -> SubMenu.NONE
                                 }
                                 changeSubMenu(targetSubMenu)
@@ -800,6 +945,21 @@ open class TraditionalSettingsView @JvmOverloads constructor(
                                     bottomPaddingLevel = i
                                     AppPreferences.setBottomPaddingLevel(i)
                                     onBottomPaddingChange?.invoke()
+                                    return true
+                                }
+                            }
+                            SubMenu.LANDSCAPE -> {
+                                if (i in 0..2 && landscapeButtonRects[i].contains(x, y)) {
+                                    val newMode = landscapeModes[i]
+                                    landscapeMode = newMode
+                                    AppPreferences.setLandscapeMode(newMode)
+                                    onLandscapeModeChange?.invoke(newMode)
+                                    val toastMsg = when (newMode) {
+                                        AppPreferences.LANDSCAPE_SPLIT -> context.getString(R.string.toast_landscape_split)
+                                        AppPreferences.LANDSCAPE_COMPACT -> context.getString(R.string.toast_landscape_compact)
+                                        else -> context.getString(R.string.toast_landscape_full)
+                                    }
+                                    android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
                                     return true
                                 }
                             }

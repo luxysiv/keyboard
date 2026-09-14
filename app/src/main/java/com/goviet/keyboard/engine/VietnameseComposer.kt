@@ -222,6 +222,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
      * No incremental mutation survives between keystrokes: the controller appends
      * to the raw buffer and calls resegment again, so every state is derived.
      */
+    fun replayRawToState(raw: CharSequence, out: SyllableState) {
+        resegment(raw, out)
+    }
+
     private fun resegment(raw: CharSequence, out: SyllableState) {
         out.reset()
         if (raw.isEmpty()) return

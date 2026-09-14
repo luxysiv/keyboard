@@ -791,10 +791,10 @@ class VietnameseComposerTest {
 
     @Test
     fun testTonePositionMapCoverageAndValidity() {
-        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("uyên"))
-        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("ươm"))
-        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("ương"))
-        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("oang"))
+        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("uyên")))
+        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("ươm")))
+        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("ương")))
+        assertTrue(RimeMap.isComplete(RimeMap.rimeKey("oang")))
 
         // Test qu and gi preprocessing
         assertEquals(1, RimeMap.findTonePosition("qu", "ua", false)) // qu + ua -> offset 1, idx 0 -> 1 (quá)

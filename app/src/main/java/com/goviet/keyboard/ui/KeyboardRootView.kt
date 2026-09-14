@@ -159,6 +159,9 @@ class KeyboardRootView @JvmOverloads constructor(
         traditionalSettingsView.onBottomPaddingChange = {
             render()
         }
+        traditionalSettingsView.onLandscapeModeChange = {
+            render()
+        }
         traditionalSettingsView.onOpenFullSettings = {
             service.openSettings()
         }
@@ -243,7 +246,7 @@ class KeyboardRootView @JvmOverloads constructor(
     }
 
     private val prefChangeListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (AppPreferences.isThemeKey(key)) {
+        if (AppPreferences.isThemeKey(key) || key == AppPreferences.PREF_LANDSCAPE_MODE) {
             render()
         }
     }
@@ -377,6 +380,12 @@ class KeyboardRootView @JvmOverloads constructor(
     }
 
     private fun updatePanels(theme: KeyboardTheme, backgroundColor: Int, isDark: Boolean) {
+        val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val landscapeMode = AppPreferences.getLandscapeMode()
+
+        standardLetterGrid.isLandscape = isLandscape
+        standardLetterGrid.landscapeMode = landscapeMode
+
         // 4. Update Panels visibility and configurations
         val allPanels: List<BaseKeyGridView> = listOf(
             standardLetterGrid,
@@ -402,6 +411,14 @@ class KeyboardRootView @JvmOverloads constructor(
             "SYMBOL_PICKER" -> symbolsPickerGrid
             else -> standardLetterGrid
         }
+
+        if (isLandscape && targetPanel != standardLetterGrid) {
+            val sideInset = (resources.displayMetrics.widthPixels * 0.15f).toInt()
+            panelContainer.setPadding(sideInset, 0, sideInset, 0)
+        } else {
+            panelContainer.setPadding(0, 0, 0, 0)
+        }
+
         val oldPanels = allPanels.filter { it != targetPanel }
 
         when (keyboardMode) {
@@ -417,6 +434,7 @@ class KeyboardRootView @JvmOverloads constructor(
                 traditionalSettingsView.keyStyle = AppPreferences.getKeyStyle()
                 traditionalSettingsView.themeMode = AppPreferences.getThemeMode()
                 traditionalSettingsView.bottomPaddingLevel = AppPreferences.getBottomPaddingLevel()
+                traditionalSettingsView.landscapeMode = landscapeMode
             }
             "CLIPBOARD" -> {
                 traditionalClipboardView.items = clipboardItems
@@ -1113,6 +1131,25 @@ class UnifiedTopHeaderView(context: Context, private val rootView: KeyboardRootV
                 IconDrawer.draw(canvas, context, "expand_more", hideCx, hideCy, 16f * density, textColor)
                 canvas.restore()
 
+                val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
+                // Landscape Quick Mode Switcher Button
+                if (isLandscape && !isBackMode) {
+                    val modeLeft = w - backBtnWidth * 2
+                    val modeCx = modeLeft + 22f * density
+                    val modeCy = h / 2f
+
+                    if (pressedButtonId == "layout_mode") {
+                        paint.color = (textColor and 0x00FFFFFF) or (0x14 shl 24)
+                        paint.style = Paint.Style.FILL
+                        val rect = RectF(modeLeft + 4f * density, 4f * density, modeLeft + backBtnWidth - 4f * density, h - 4f * density)
+                        canvas.drawRoundRect(rect, 8f * density, 8f * density, paint)
+                    }
+
+                    val curLandscapeMode = AppPreferences.getLandscapeMode()
+                    drawLandscapeModeHeaderIcon(canvas, curLandscapeMode, modeCx, modeCy, textColor)
+                }
+
                 // Shortcuts Area & Divider
                 if (toolbarProgress > 0f && !isBackMode) {
                     val dividerLeft = 44f * density + 2f * density
@@ -1139,7 +1176,7 @@ class UnifiedTopHeaderView(context: Context, private val rootView: KeyboardRootV
 
                     // Shortcuts
                     val shortcutsLeft = 48f * density
-                    val shortcutsRight = w - backBtnWidth
+                    val shortcutsRight = if (isLandscape) w - backBtnWidth * 2 else w - backBtnWidth
                     val availableWidth = shortcutsRight - shortcutsLeft
                     val itemWidth = availableWidth / 6f
 
@@ -1227,11 +1264,16 @@ class UnifiedTopHeaderView(context: Context, private val rootView: KeyboardRootV
                     return "hide"
                 }
 
+                val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
                 val isBackMode = (rootView.keyboardMode == "SETTINGS" || rootView.keyboardMode == "CLIPBOARD" || rootView.keyboardMode == "EDIT_PAD" || rootView.keyboardMode == "TPAD")
+                if (isLandscape && !isBackMode && x > w - backBtnWidth * 2 && x <= w - backBtnWidth) {
+                    return "layout_mode"
+                }
+
                 val shouldShowToolbar = toolbarProgress >= 0.99f && !isBackMode
                 if (shouldShowToolbar) {
                     val shortcutsLeft = 48f * density
-                    val shortcutsRight = w - backBtnWidth
+                    val shortcutsRight = if (isLandscape) w - backBtnWidth * 2 else w - backBtnWidth
                     if (x >= shortcutsLeft && x <= shortcutsRight) {
                         val availableWidth = shortcutsRight - shortcutsLeft
                         val itemWidth = availableWidth / 6f
@@ -1266,6 +1308,22 @@ class UnifiedTopHeaderView(context: Context, private val rootView: KeyboardRootV
             }
             "hide" -> {
                 rootView.service.requestHideSelf(0)
+            }
+            "layout_mode" -> {
+                val current = AppPreferences.getLandscapeMode()
+                val next = when (current) {
+                    AppPreferences.LANDSCAPE_SPLIT -> AppPreferences.LANDSCAPE_COMPACT
+                    AppPreferences.LANDSCAPE_COMPACT -> AppPreferences.LANDSCAPE_FULL
+                    else -> AppPreferences.LANDSCAPE_SPLIT
+                }
+                AppPreferences.setLandscapeMode(next)
+                rootView.render()
+                val toastMsg = when (next) {
+                    AppPreferences.LANDSCAPE_SPLIT -> context.getString(R.string.toast_landscape_split)
+                    AppPreferences.LANDSCAPE_COMPACT -> context.getString(R.string.toast_landscape_compact)
+                    else -> context.getString(R.string.toast_landscape_full)
+                }
+                android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
             }
             in DrawerButton.ALL.map { it.id } -> {
                 val btn = DrawerButton.ALL.first { it.id == id }
@@ -1397,5 +1455,49 @@ class UnifiedTopHeaderView(context: Context, private val rootView: KeyboardRootV
             }
         }
         return true
+    }
+
+    private fun drawLandscapeModeHeaderIcon(canvas: Canvas, mode: String, cx: Float, cy: Float, color: Int) {
+        val strokePaint = paint
+        strokePaint.color = color
+        strokePaint.style = Paint.Style.STROKE
+        strokePaint.strokeWidth = 1.5f * density
+
+        val r = 2f * density
+        when (mode) {
+            AppPreferences.LANDSCAPE_SPLIT -> {
+                val blockW = 6f * density
+                val blockH = 12f * density
+                val gap = 6f * density
+
+                val leftRect = RectF(cx - gap / 2f - blockW, cy - blockH / 2f, cx - gap / 2f, cy + blockH / 2f)
+                val rightRect = RectF(cx + gap / 2f, cy - blockH / 2f, cx + gap / 2f + blockW, cy + blockH / 2f)
+
+                canvas.drawRoundRect(leftRect, r, r, strokePaint)
+                canvas.drawRoundRect(rightRect, r, r, strokePaint)
+
+                val dotH = 4f * density
+                canvas.drawLine(cx, cy - dotH / 2f, cx, cy + dotH / 2f, strokePaint)
+            }
+            AppPreferences.LANDSCAPE_COMPACT -> {
+                val blockW = 10f * density
+                val blockH = 12f * density
+                val insetDist = 9f * density
+                val barH = 12f * density
+
+                val centerRect = RectF(cx - blockW / 2f, cy - blockH / 2f, cx + blockW / 2f, cy + blockH / 2f)
+                canvas.drawRoundRect(centerRect, r, r, strokePaint)
+
+                canvas.drawLine(cx - insetDist, cy - barH / 2f, cx - insetDist, cy + barH / 2f, strokePaint)
+                canvas.drawLine(cx + insetDist, cy - barH / 2f, cx + insetDist, cy + barH / 2f, strokePaint)
+            }
+            else -> {
+                val blockW = 20f * density
+                val blockH = 12f * density
+                val fullRect = RectF(cx - blockW / 2f, cy - blockH / 2f, cx + blockW / 2f, cy + blockH / 2f)
+                canvas.drawRoundRect(fullRect, r, r, strokePaint)
+                canvas.drawLine(cx - 5f * density, cy + 2f * density, cx + 5f * density, cy + 2f * density, strokePaint)
+            }
+        }
     }
 }

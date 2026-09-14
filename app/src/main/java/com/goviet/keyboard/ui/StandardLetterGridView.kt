@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.util.AttributeSet
 import android.view.MotionEvent
 import com.goviet.core.density
+import com.goviet.core.AppPreferences
 
 class StandardLetterGridView @JvmOverloads constructor(
     context: Context,
@@ -59,6 +60,24 @@ class StandardLetterGridView @JvmOverloads constructor(
             }
         }
 
+    var isLandscape: Boolean = false
+        set(value) {
+            if (field != value) {
+                field = value
+                rebuildKeys()
+                recalcCoordinates()
+            }
+        }
+
+    var landscapeMode: String = AppPreferences.LANDSCAPE_SPLIT
+        set(value) {
+            if (field != value) {
+                field = value
+                rebuildKeys()
+                recalcCoordinates()
+            }
+        }
+
     var onKey: ((String) -> Unit)? = null
     var onSwitchToSymbols: (() -> Unit)? = null
     var onSwitchToEmoji: (() -> Unit)? = null
@@ -101,8 +120,9 @@ class StandardLetterGridView @JvmOverloads constructor(
     }
 
     private fun rebuildKeys() {
+        val isSplit = isLandscape && (landscapeMode == AppPreferences.LANDSCAPE_SPLIT)
         val (newKeys, _) = KeyboardLayout.buildKeyRows(
-            internalKeyboardMode, shiftState, languageMode, imeOptions, inputType
+            internalKeyboardMode, shiftState, languageMode, imeOptions, inputType, isSplit
         )
         keys.clear()
         keys.addAll(newKeys)
@@ -132,13 +152,110 @@ class StandardLetterGridView @JvmOverloads constructor(
     private fun calculateKeyCoordinates(width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
 
-        val paddingLeft = 4 * density
-        val paddingRight = 4 * density
-        val paddingTop = 6 * density
-        val paddingBottom = 4 * density
+        val isSplit = isLandscape && (landscapeMode == AppPreferences.LANDSCAPE_SPLIT)
+        val isCompact = isLandscape && (landscapeMode == AppPreferences.LANDSCAPE_COMPACT)
 
-        val usableWidth = width - paddingLeft - paddingRight
+        val baseSidePadding = 4f * density
+        val paddingTop = 6f * density
+        val paddingBottom = 4f * density
         val unitRowHeight = KeyboardUtils.calculateStandardRowHeight(height.toFloat(), density, 5, verticalSpacing)
+
+        if (isSplit) {
+            // ── Split Mode Layout (Ergonomic thumb reach with center gap) ──
+            val paddingLeft = 6f * density
+            val paddingRight = 6f * density
+            val usableWidth = width - paddingLeft - paddingRight
+
+            val centerGap = (usableWidth * 0.22f).coerceIn(80f * density, 220f * density)
+            val clusterWidth = (usableWidth - centerGap) / 2f
+            val leftStart = paddingLeft
+            val rightStart = width - paddingRight - clusterWidth
+
+            var currentY = paddingTop
+            for (rowIndex in rows.indices) {
+                val row = rows[rowIndex]
+                val topOfRow = currentY
+                val bottomOfRow = topOfRow + unitRowHeight
+
+                val splitIndex = when (rowIndex) {
+                    0, 1 -> 5
+                    2 -> 5
+                    3 -> 5
+                    4 -> 3
+                    else -> row.size / 2
+                }
+
+                val leftKeys = row.subList(0, splitIndex.coerceAtMost(row.size))
+                val rightKeys = row.subList(splitIndex.coerceAtMost(row.size), row.size)
+
+                layoutCluster(leftKeys, leftStart, clusterWidth, topOfRow, bottomOfRow)
+                layoutCluster(rightKeys, rightStart, clusterWidth, topOfRow, bottomOfRow)
+
+                currentY += unitRowHeight + verticalSpacing
+            }
+
+            // Hit bounds (touch bounds) for Split Mode
+            for (rowIndex in rows.indices) {
+                val row = rows[rowIndex]
+                val topBound = if (rowIndex == 0) 0f else {
+                    val prevBottom = rows[rowIndex - 1][0].visualRect.bottom
+                    val currTop = row[0].visualRect.top
+                    (prevBottom + currTop) / 2f
+                }
+                val bottomBound = if (rowIndex == rows.size - 1) height.toFloat() else {
+                    val currBottom = row[0].visualRect.bottom
+                    val nextTop = rows[rowIndex + 1][0].visualRect.top
+                    (currBottom + nextTop) / 2f
+                }
+
+                val splitIndex = when (rowIndex) {
+                    0, 1 -> 5
+                    2 -> 5
+                    3 -> 5
+                    4 -> 3
+                    else -> row.size / 2
+                }
+
+                val leftKeys = row.subList(0, splitIndex.coerceAtMost(row.size))
+                val rightKeys = row.subList(splitIndex.coerceAtMost(row.size), row.size)
+
+                for (i in leftKeys.indices) {
+                    val key = leftKeys[i]
+                    val leftBound = if (i == 0) 0f else (leftKeys[i - 1].visualRect.right + key.visualRect.left) / 2f
+                    val rightBound = if (i == leftKeys.size - 1) {
+                        key.visualRect.right + (centerGap / 3f)
+                    } else {
+                        (key.visualRect.right + leftKeys[i + 1].visualRect.left) / 2f
+                    }
+                    key.rect.set(leftBound, topBound, rightBound, bottomBound)
+                }
+
+                for (i in rightKeys.indices) {
+                    val key = rightKeys[i]
+                    val leftBound = if (i == 0) {
+                        key.visualRect.left - (centerGap / 3f)
+                    } else {
+                        (rightKeys[i - 1].visualRect.right + key.visualRect.left) / 2f
+                    }
+                    val rightBound = if (i == rightKeys.size - 1) width.toFloat() else {
+                        (key.visualRect.right + rightKeys[i + 1].visualRect.left) / 2f
+                    }
+                    key.rect.set(leftBound, topBound, rightBound, bottomBound)
+                }
+            }
+            return
+        }
+
+        // ── Normal or Side-Inset Compact Mode Layout ──
+        val sideInset = if (isCompact) {
+            (width * 0.16f).coerceIn(40f * density, 140f * density)
+        } else {
+            0f
+        }
+
+        val paddingLeft = baseSidePadding + sideInset
+        val paddingRight = baseSidePadding + sideInset
+        val usableWidth = width - paddingLeft - paddingRight
 
         var currentY = paddingTop
         for (rowIndex in rows.indices) {
@@ -209,13 +326,52 @@ class StandardLetterGridView @JvmOverloads constructor(
         }
     }
 
+    private fun layoutCluster(
+        clusterKeys: List<Key>,
+        startX: Float,
+        availableClusterWidth: Float,
+        topY: Float,
+        bottomY: Float
+    ) {
+        if (clusterKeys.isEmpty()) return
+        val totalSpacings = (clusterKeys.size - 1).coerceAtLeast(0)
+        val widthAvailable = availableClusterWidth - (horizontalSpacing * totalSpacings)
+        val totalWeight = clusterKeys.sumOf { it.weight.toDouble() }.toFloat()
+        val unitWidth = widthAvailable / totalWeight
+
+        var currentX = startX
+        for (key in clusterKeys) {
+            val actualWidth = key.weight * unitWidth
+            key.visualRect.set(currentX, topY, currentX + actualWidth, bottomY)
+            key.shadowRect.set(
+                key.visualRect.left, key.visualRect.top + 0.8f * density,
+                key.visualRect.right, key.visualRect.bottom + 1.2f * density
+            )
+            currentX += actualWidth + horizontalSpacing
+        }
+    }
+
     // ── Drawing ─────────────────────────────────────────────────────────────
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        if (isLandscape && landscapeMode == AppPreferences.LANDSCAPE_SPLIT) {
+            drawSplitCenterIndicator(canvas, width.toFloat(), height.toFloat())
+        }
         for (key in keys) {
             drawKey(canvas, key)
         }
+    }
+
+    private fun drawSplitCenterIndicator(canvas: Canvas, w: Float, h: Float) {
+        val cx = w / 2f
+        val indicatorH = 26f * density
+        val cy = h / 2f
+        val pillW = 3.5f * density
+        paint.color = subTextColor
+        paint.alpha = if (isDark) 35 else 50
+        shadowDrawRect.set(cx - pillW / 2f, cy - indicatorH / 2f, cx + pillW / 2f, cy + indicatorH / 2f)
+        canvas.drawRoundRect(shadowDrawRect, pillW / 2f, pillW / 2f, paint)
     }
 
     private fun drawKey(canvas: Canvas, key: Key) {
@@ -258,7 +414,7 @@ class StandardLetterGridView @JvmOverloads constructor(
                 val baseline = KeyboardUtils.centerBaselineY(drawRect, textPaint)
                 canvas.drawText(spaceChars, 0, spaceChars.size, drawRect.centerX(), baseline, textPaint)
 
-                val indicatorW = 36f * density
+                val indicatorW = (36f * density).coerceAtMost(drawRect.width() * 0.45f)
                 val indicatorH = 2.5f * density
                 val indicatorY = drawRect.bottom - 7f * density
                 val indicatorLeft = drawRect.centerX() - indicatorW / 2f

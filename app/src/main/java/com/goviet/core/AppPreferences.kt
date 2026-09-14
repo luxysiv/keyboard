@@ -141,6 +141,21 @@ object AppPreferences {
             .apply()
     }
 
+    const val PREF_LANDSCAPE_MODE = "pref_landscape_mode"
+    const val LANDSCAPE_SPLIT = "split"
+    const val LANDSCAPE_COMPACT = "compact"
+    const val LANDSCAPE_FULL = "full"
+
+    fun getLandscapeMode(): String {
+        return settingsPrefs.getString(PREF_LANDSCAPE_MODE, LANDSCAPE_SPLIT) ?: LANDSCAPE_SPLIT
+    }
+
+    fun setLandscapeMode(mode: String) {
+        settingsPrefs.edit()
+            .putString(PREF_LANDSCAPE_MODE, mode)
+            .apply()
+    }
+
     fun getThemeMode(): String {
         return if (globalPrefs.contains("pref_theme_mode")) {
             globalPrefs.getString("pref_theme_mode", "system") ?: "system"
