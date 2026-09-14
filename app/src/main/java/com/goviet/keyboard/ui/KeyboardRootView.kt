@@ -355,9 +355,9 @@ class KeyboardRootView @JvmOverloads constructor(
         val isLandscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val isTablet = resources.configuration.screenWidthDp >= 600
         val baseKeyboardHeightDp = if (isTablet) {
-            if (isLandscape) 205f else 280f
+            if (isLandscape) 190f else 280f
         } else {
-            if (isLandscape) 175f else 255f
+            if (isLandscape) 160f else 255f
         }
         val targetHeightPx = baseKeyboardHeightDp.dpPx(context)
         animateHeightTo(targetHeightPx)
@@ -682,6 +682,13 @@ class KeyboardRootView @JvmOverloads constructor(
     }
 
     private fun getNavigationBarPaddingPx(context: Context): Int {
+        val isLandscape = context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        if (isLandscape) {
+            // Ở chế độ nằm ngang, chiều cao màn hình rất quý giá (~360-400dp).
+            // Hạ tối đa khoảng cách từ mép màn hình tới phím cách xuống mức tối thiểu (2dp).
+            return 2f.dpPx(context)
+        }
+
         val densityValue = context.density
         val navigationBarHeightRawDp = navigationBarHeightRaw / densityValue
         val isGestureMode = isGestureNavigationEnabled(context) || (navigationBarHeightRawDp < 20f)

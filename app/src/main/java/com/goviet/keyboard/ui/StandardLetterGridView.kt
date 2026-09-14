@@ -156,9 +156,10 @@ class StandardLetterGridView @JvmOverloads constructor(
         val isCompact = isLandscape && (landscapeMode == AppPreferences.LANDSCAPE_COMPACT)
 
         val baseSidePadding = 4f * density
-        val paddingTop = 6f * density
-        val paddingBottom = 4f * density
-        val unitRowHeight = KeyboardUtils.calculateStandardRowHeight(height.toFloat(), density, 5, verticalSpacing)
+        val paddingTop = if (isLandscape) 3f * density else 6f * density
+        val paddingBottom = if (isLandscape) 2f * density else 4f * density
+        val rowSpacing = if (isLandscape) 4.5f * density else verticalSpacing
+        val unitRowHeight = ((height - paddingTop - paddingBottom - (rowSpacing * (rows.size - 1))) / rows.size.toFloat()).coerceAtLeast(20f * density)
 
         if (isSplit) {
             // ── Split Mode Layout (Ergonomic thumb reach with center gap) ──
@@ -191,7 +192,7 @@ class StandardLetterGridView @JvmOverloads constructor(
                 layoutCluster(leftKeys, leftStart, clusterWidth, topOfRow, bottomOfRow)
                 layoutCluster(rightKeys, rightStart, clusterWidth, topOfRow, bottomOfRow)
 
-                currentY += unitRowHeight + verticalSpacing
+                currentY += unitRowHeight + rowSpacing
             }
 
             // Hit bounds (touch bounds) for Split Mode
@@ -293,7 +294,7 @@ class StandardLetterGridView @JvmOverloads constructor(
                     currentX += actualWidth + horizontalSpacing
                 }
             }
-            currentY += unitRowHeight + verticalSpacing
+            currentY += unitRowHeight + rowSpacing
         }
 
         // Hit bounds (touch rects) — extend to midpoint between keys
@@ -408,20 +409,11 @@ class StandardLetterGridView @JvmOverloads constructor(
             }
             key.code == "SPACE" -> {
                 val spaceChars = if (useVietSpace) spaceVietChars else spaceEngChars
-                textPaint.textSize = 12.5f * density
+                textPaint.textSize = if (isLandscape) 11.5f * density else 12.5f * density
                 textPaint.color = subTextColor
                 textPaint.typeface = normalTypeface
                 val baseline = KeyboardUtils.centerBaselineY(drawRect, textPaint)
                 canvas.drawText(spaceChars, 0, spaceChars.size, drawRect.centerX(), baseline, textPaint)
-
-                val indicatorW = (36f * density).coerceAtMost(drawRect.width() * 0.45f)
-                val indicatorH = 2.5f * density
-                val indicatorY = drawRect.bottom - 7f * density
-                val indicatorLeft = drawRect.centerX() - indicatorW / 2f
-                shadowDrawRect.set(indicatorLeft, indicatorY - indicatorH, indicatorLeft + indicatorW, indicatorY)
-                paint.color = activeAccentColor
-                paint.alpha = if (isDark) 90 else 130
-                canvas.drawRoundRect(shadowDrawRect, 1.2f * density, 1.2f * density, paint)
             }
             else -> {
                 KeyboardUtils.drawKeyLabel(canvas, key.label, drawRect, textPaint, textColor, density)
