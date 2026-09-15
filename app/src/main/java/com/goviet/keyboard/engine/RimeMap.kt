@@ -16,6 +16,41 @@ package com.goviet.keyboard.engine
  */
 object RimeMap {
 
+    data class NucSpec(
+        val nucleus: String,
+        val codas: Array<String>,
+        val tnNew: Int,
+        val tnOld: Int = tnNew,
+        /** Tone position for the closed rime (coda present).  When
+         *  different from [tnNew] it encodes the terminated vs open distinction. */
+        val tnNewCoda: Int = tnNew
+    )
+
+    // Coda groups — exact pairs that actually exist in Vietnamese
+    // (verified against the 17,974-syllable corpus; NOT the full Cartesian product).
+    //   c/ch/p/t = stop codas → only acute/dot (sắc/nặng) tones
+    //   m/n/ng/nh = nasal codas → 6 tones
+    val C_ALL   = arrayOf("c","ch","p","t","m","n","ng","nh") // a, ê, oa
+    val C_SHORT = arrayOf("c","p","t","m","n","ng")           // ă, â, o, ô, u, uô, ươ, iê, uo, ie
+    val C_I     = arrayOf("ch","p","t","m","n","nh")          // i (no c, no ng)
+    val C_O5    = arrayOf("p","t","m","n")                    // ơ (no c, no ng)
+    val C_U8    = arrayOf("c","m","n","ng","t")               // ư (no p)
+    val C_Y     = arrayOf("p","t","ch","n","nh")              // y
+    val C_OE    = arrayOf("m","n","p","t")                        // oe
+    val C_OA5   = arrayOf("c","m","n","ng","p","t")               // oă (no p)
+    val C_UE    = arrayOf("ch","n","nh","t")                          // ue, uê
+    val C_UA4   = arrayOf("c","n","ng","t")                       // uâ
+    val C_UA    = arrayOf("n","ng","t")                            // ua
+    val C_UY2   = arrayOf("p","t","ch","n","nh")              // uy
+    val C_OO    = arrayOf("c","ng")                           // oo (coong, xoóc)
+    val C_UYE   = arrayOf("n","t")                            // uye/uyê
+    val C_TMNG  = arrayOf("t","m","n","ng")                   // ye/yê (pre-fold raw)
+    val C_NONE  = emptyArray<String>()
+
+    private lateinit var _nuclei: Array<NucSpec>
+
+
+
     // ── Vietnamese rime character → 5-bit index encoding ──────────
     //
     // All 29 characters that appear in Vietnamese nuclei + codas.
@@ -88,7 +123,6 @@ object RimeMap {
     private const val TABLE_MASK = TABLE_SIZE - 1     // syllable-prefix table only
 
     private val table = IntFlatTable(TABLE_BITS)
-    private val _sylTable = LongArray(TABLE_SIZE)
     private lateinit var _fold: LongArray    // per-nucleus fold targets (e/o/a + w-primary)
     private lateinit var _foldW: IntArray    // per-nucleus w alt variant + flags
 
@@ -158,16 +192,6 @@ object RimeMap {
         return sb.toString()
     }
 
-    private data class NucSpec(
-        val nucleus: String,
-        val codas: Array<String>,
-        val tnNew: Int,
-        val tnOld: Int = tnNew,
-        /** Tone position for the closed rime (coda present).  When
-         *  different from [tnNew] it encodes the terminated vs open distinction. */
-        val tnNewCoda: Int = tnNew
-    )
-
     private fun build() {
         _fold = LongArray(TABLE_SIZE)
         _foldW = IntArray(TABLE_SIZE)
@@ -186,28 +210,8 @@ object RimeMap {
         //                2 = trigraph middle char.
         // "isStop": coda in {c, ch, p, t} → only acute/dot (sắc/nặng) tones allowed.
 
-        // Coda groups — exact pairs that actually exist in Vietnamese
-        // (verified against the 17,974-syllable corpus; NOT the full Cartesian product).
-        //   c/ch/p/t = stop codas → only acute/dot (sắc/nặng) tones
-        //   m/n/ng/nh = nasal codas → 6 tones
-        val C_ALL   = arrayOf("c","ch","p","t","m","n","ng","nh") // a, ê, oa
-        val C_SHORT = arrayOf("c","p","t","m","n","ng")           // ă, â, o, ô, u, uô, ươ, iê, uo, ie
-        val C_I     = arrayOf("ch","p","t","m","n","nh")          // i (no c, no ng)
-        val C_O5    = arrayOf("p","t","m","n")                    // ơ (no c, no ng)
-        val C_U8    = arrayOf("c","m","n","ng","t")               // ư (no p)
-        val C_Y     = arrayOf("p","t","ch","n","nh")              // y
-        val C_OE    = arrayOf("m","n","p","t")                        // oe
-        val C_OA5   = arrayOf("c","m","n","ng","p","t")               // oă (no p)
-        val C_UE    = arrayOf("ch","n","nh","t")                          // ue, uê
-        val C_UA4   = arrayOf("c","n","ng","t")                       // uâ
-        val C_UA    = arrayOf("n","ng","t")                            // ua
-        val C_UY2   = arrayOf("p","t","ch","n","nh")              // uy
-        val C_OO    = arrayOf("c","ng")                           // oo (coong, xoóc)
-        val C_UYE   = arrayOf("n","t")                            // uye/uyê
-        val C_TMNG  = arrayOf("t","m","n","ng")                   // ye/yê (pre-fold raw)
-        val C_NONE  = emptyArray<String>()
 
-        val NUCLEI = arrayOf(
+        _nuclei = arrayOf(
             // ── Single vowels — tone on the vowel itself (pos 0) ──
             NucSpec("a",  C_ALL,   0), NucSpec("ă",  C_SHORT, 0),
             NucSpec("â",  C_SHORT, 0), NucSpec("e",  C_ALL,   0),
@@ -259,7 +263,7 @@ object RimeMap {
         // ── Populate: all complete rimes + their prefixes ──────────
         val allRimes = mutableListOf<String>()
 
-        for (spec in NUCLEI) {
+        for (spec in _nuclei) {
             allRimes.add(spec.nucleus)
             val nucKey = rimeKey(spec.nucleus)
             val slot = table.insert(nucKey, packData(1, 1, 0, spec.tnNew, spec.tnOld))
@@ -304,15 +308,15 @@ object RimeMap {
         // for N+V; if it maps to a DIFFERENT display nucleus, that's a valid
         // vowel combination (e.g. ư + raw('o') → raw("uw"+"o") = "uwo" → "ươ").
         // All lookup is O(1) via the rawToDisplay flatmap — no hardcoded pairs.
-        val rawToDisplay = HashMap<String, String>(NUCLEI.size * 2)
-        for (spec in NUCLEI) rawToDisplay[rawKeyForNucleus(spec.nucleus)] = spec.nucleus
+        val rawToDisplay = HashMap<String, String>(_nuclei.size * 2)
+        for (spec in _nuclei) rawToDisplay[rawKeyForNucleus(spec.nucleus)] = spec.nucleus
         // Overrides win over any naive collisions (uơi/ươi share raw "uowi").
-        for (spec in NUCLEI) {
+        for (spec in _nuclei) {
             val override = rawOverride(spec.nucleus.lowercase())
             if (override != null) rawToDisplay[override] = spec.nucleus
         }
         val plainVowels = charArrayOf('a', 'e', 'i', 'o', 'u')
-        for (spec in NUCLEI) {
+        for (spec in _nuclei) {
             val baseRaw = rawKeyForNucleus(spec.nucleus)
             for (v in plainVowels) {
                 val combined = rawToDisplay[baseRaw + v] ?: continue
@@ -321,8 +325,6 @@ object RimeMap {
                 combineInsert(spec.nucleus, v, combined)
             }
         }
-
-        buildSyllablePrefixTable(NUCLEI)
     }
 
     /** Pack metadata into a single Int (stored as Byte in table). */
@@ -782,22 +784,21 @@ object RimeMap {
     }
 
 
-    // ── Syllable prefix table (rule-based phonotactic generation) ──────
+    // ── Syllable prefix table (auto-generated from 18342 syllables) ──────
     // Single source of truth for display-prefix
     // validation (e.g. qu+ư invalid, onset+rime must be a prefix of a real syllable).
+    private val _sylTable = LongArray(TABLE_SIZE)
 
-    private fun sylPackPrefixKey(cs: CharSequence, len: Int): Long {
-        if (len <= 0 || len > 10 || len > cs.length) return -1L
-        var key = len.toLong() shl 55
-        for (i in 0 until len) {
-            val idx = cs[i].code - 'a'.code
+    private fun sylPackKey(s: String): Long {
+        if (s.isEmpty() || s.length > 10) return -1L
+        var key = s.length.toLong() shl 55
+        for (i in s.indices) {
+            val idx = s[i].code - 'a'.code
             if (idx < 0 || idx >= 26) return -1L
             key = key or (idx.toLong() shl (50 - 5 * i))
         }
         return key
     }
-
-    private fun sylPackKey(s: String): Long = sylPackPrefixKey(s, s.length)
 
     private fun sylHash(key: Long): Int =
         ((key * -0x61c88647L) xor (key ushr 32)).toInt() and TABLE_MASK
@@ -809,13 +810,6 @@ object RimeMap {
             if (_sylTable[slot] == key) return
             if (_sylTable[slot] == 0L) { _sylTable[slot] = key; return }
             slot = (slot + 1) and TABLE_MASK
-        }
-    }
-
-    private fun insertAllPrefixes(cs: CharSequence) {
-        for (len in 1..cs.length) {
-            val key = sylPackPrefixKey(cs, len)
-            if (key >= 0) sylInsert(key)
         }
     }
 
@@ -861,121 +855,67 @@ object RimeMap {
         }
         return sb.toString()
     }
-    private fun stripVowels(s: String): String {
-        val sb = StringBuilder(s.length)
-        for (c in s) {
-            when (c) {
-                'ă', 'â' -> sb.append('a')
-                'ê' -> sb.append('e')
-                'ô', 'ơ' -> sb.append('o')
-                'ư' -> sb.append('u')
-                else -> sb.append(c)
-            }
+    // ── Vietnamese onset-rime phonotactic rules ─────────────
+    // Source: QĐ 01/2003/QĐ-BGDĐT + Ngữ pháp tiếng Việt.
+    // Onset-rime compatibility: which vowels can follow each onset.
+    private fun onsetAllowsFirstVowel(onset: String, vowel: Char): Boolean {
+        return when (onset) {
+            "c" -> vowel == 'a' || vowel == 'ă' || vowel == 'â' ||
+                   vowel == 'o' || vowel == 'ô' || vowel == 'ơ' ||
+                   vowel == 'u' || vowel == 'ư'
+            "k" -> vowel == 'e' || vowel == 'ê' || vowel == 'i' || vowel == 'y'
+            "g" -> vowel == 'a' || vowel == 'ă' || vowel == 'â' ||
+                   vowel == 'o' || vowel == 'ô' || vowel == 'ơ' ||
+                   vowel == 'u' || vowel == 'ư'
+            "gh" -> vowel == 'e' || vowel == 'ê' || vowel == 'i'
+            "ng" -> vowel == 'a' || vowel == 'ă' || vowel == 'â' ||
+                    vowel == 'o' || vowel == 'ô' || vowel == 'ơ' ||
+                    vowel == 'u' || vowel == 'ư'
+            "ngh" -> vowel == 'e' || vowel == 'ê' || vowel == 'i'
+            "qu" -> vowel == 'a' || vowel == 'e' || vowel == 'i' ||
+                    vowel == 'o' || vowel == 'y'
+            "gi" -> true
+            else -> true  // free onsets: b,ch,d,đ,h,kh,l,m,n,nh,ph,p,r,s,t,th,tr,v,x
         }
-        return sb.toString()
     }
 
-    /**
-     * Syllable prefix table generator derived directly from Vietnamese phonotactics
-     * and orthography rules (Onset × Rime compatibility, c/k/q, g/gh, ng/ngh, qu, gi).
-     * Replaces static corpus-derived EMBEDDED array with a compact, rule-driven engine.
-     */
-    private fun buildSyllablePrefixTable(nuclei: Array<NucSpec>) {
-        val freeOnsets = arrayOf(
-            "", "b", "ch", "d", "h", "kh", "l", "m", "n", "nh",
-            "ph", "r", "s", "t", "th", "tr", "v", "x", "p"
+    /** Generate syllable prefix table from onset rules + _nuclei/codas. */
+    private fun generateSyllableTable() {
+        val onsets = arrayOf(
+            "ngh", "ng", "nh", "th", "tr", "ch", "ph", "kh", "gh", "gi", "qu",
+            "b", "c", "d", "đ", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x"
         )
-
-        val sb = StringBuilder(16)
-
-        fun addSyllable(onset: String, strippedNuc: String, coda: String) {
-            sb.setLength(0)
-            sb.append(onset)
-            sb.append(strippedNuc)
-            sb.append(coda)
-            insertAllPrefixes(sb)
-        }
-
-        for (spec in nuclei) {
-            val nuc = spec.nucleus
-            val strippedNuc = stripVowels(nuc)
-            val firstChar = nuc[0]
-            val allCodas = if (spec.codas.isEmpty()) arrayOf("") else arrayOf("") + spec.codas
-
-            for (coda in allCodas) {
-                // 1. Free onsets
-                for (onset in freeOnsets) {
-                    if (nuc == "uơ" && onset !in arrayOf("h", "th", "kh", "l")) continue
-                    addSyllable(onset, strippedNuc, coda)
+        // Insert bare onsets
+        for (onset in onsets) sylInsert(sylPackKey(onset))
+        // Insert bare vowels
+        for (spec in _nuclei) sylInsert(sylPackKey(spec.nucleus))
+        // Generate onset + nucleus + (optional coda) combinations
+        for (onset in onsets) {
+            for (spec in _nuclei) {
+                val nuc = spec.nucleus
+                val firstChar = nuc[0].lowercaseChar()
+                if (!onsetAllowsFirstVowel(onset, firstChar)) continue
+                // gi is special: "gi" + "i" = "gi" (not "gii"),
+                // "gi" + "ie" = "gie" (not "giie")
+                val syllable = if (onset == "gi" && (nuc == "i" || nuc[0] == 'i')) {
+                    if (nuc == "i") "gi" else "gi" + nuc.substring(1)
+                } else {
+                    "$onset$nuc"
                 }
-
-                // 2. "k": only before front vowels (e, ê, i, y)
-                if (firstChar in "eêiy") {
-                    addSyllable("k", strippedNuc, coda)
-                }
-
-                // 3. "c": only before back/central vowels (a, ă, â, o, ô, ơ, u, ư)
-                // Exclude e, ê, i, y and glide u-compounds (uâ, uê, uy, uye) which use "qu"
-                if (firstChar in "aăâoôơuư") {
-                    val isQuOrGlide = nuc.startsWith("oa") || nuc.startsWith("oe") ||
-                                      nuc.startsWith("uâ") || nuc.startsWith("uê") || nuc.startsWith("uy")
-                    if (!isQuOrGlide) {
-                        addSyllable("c", strippedNuc, coda)
-                    }
-                }
-
-                // 4. "gh": only before front vowels (e, ê, i)
-                if (firstChar in "eêi") {
-                    addSyllable("gh", strippedNuc, coda)
-                }
-
-                // 5. "g": only before back/central vowels (a, ă, â, o, ô, ơ, u, ư)
-                // Exclude e, ê (uses gh) and i (uses gi) and glide u-compounds (uâ, uê, uy)
-                if (firstChar in "aăâoôơuư") {
-                    val isQuOrGlide = nuc.startsWith("uâ") || nuc.startsWith("uê") || nuc.startsWith("uy")
-                    if (!isQuOrGlide) {
-                        addSyllable("g", strippedNuc, coda)
-                    }
-                }
-
-                // 6. "ngh": only before front vowels (e, ê, i)
-                if (firstChar in "eêi") {
-                    addSyllable("ngh", strippedNuc, coda)
-                }
-
-                // 7. "ng": only before back/central vowels (a, ă, â, o, ô, ơ, u, ư)
-                if (firstChar in "aăâoôơuư") {
-                    val isQuOrGlide = nuc.startsWith("uâ") || nuc.startsWith("uê") || nuc.startsWith("uy")
-                    if (!isQuOrGlide) {
-                        addSyllable("ng", strippedNuc, coda)
-                    }
-                }
-
-                // 8. "qu":
-                // Combines with a, ă, â, e, ê, i, y, and open rime "uơ" (quơ)
-                // Never combines with u, ư, o, ô (no quu, quư, quo, quô)
-                if (nuc == "uơ" && coda.isEmpty()) {
-                    addSyllable("q", "uo", "") // quơ -> ASCII "quo" -> prefixes q, qu, quo
-                } else if (firstChar in "aăâeêiy") {
-                    addSyllable("qu", strippedNuc, coda)
-                }
-
-                // 9. "gi":
-                // - With i... / iê...: written as "g" + rime (gi, gin, git, gie, gieng, giet...) -> never gii, giie
-                // - With other vowels (a, ă, â, e, o, ô, ơ, u, ư): written as "gi" + rime (gia, giang, giu, giup...)
-                // Excludes y, uô, ưa, ươ, oa, oe, uy
-                if (firstChar == 'i') {
-                    addSyllable("g", strippedNuc, coda)
-                } else if (firstChar in "aăâeoôơuư") {
-                    val isExcluded = nuc.startsWith("uô") || nuc.startsWith("ưa") ||
-                                     nuc.startsWith("ươ") || nuc.startsWith("oa") ||
-                                     nuc.startsWith("oe") || nuc.startsWith("uy")
-                    if (!isExcluded) {
-                        addSyllable("gi", strippedNuc, coda)
-                    }
+                // Open rime
+                for (len in onset.length..syllable.length) sylInsert(sylPackKey(syllable.substring(0, len)))
+                // Closed rimes
+                for (coda in spec.codas) {
+                    val closed = syllable + coda
+                    for (len in onset.length..closed.length) sylInsert(sylPackKey(closed.substring(0, len)))
                 }
             }
         }
+    }
+
+    // ── Syllable prefix init ──────────────────────────────────
+    init {
+        generateSyllableTable()
     }
 
 }
