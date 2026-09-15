@@ -155,8 +155,7 @@ class BugReproductionTest {
     // ── Bug 5: Multi-char coda + deferred fold — lenhe → lênh, cheches → chếch ──
     @Test
     fun testBug5_lenhe_shouldBe_lenh() {
-        // "en" is valid coda for 'e'; "nh" is only valid for 'ê'.
-        // The fold key 'e' at pos+1 triggers e→ê making "nh" a valid coda.
+        // "en" is valid coda for 'e'; "nh" also valid for 'e' (C_ALL matches UniKey).
         assertEquals("lênh", engine.process("lenhe"))
     }
 
@@ -169,7 +168,7 @@ class BugReproductionTest {
 
     @Test
     fun testBug5_cheches_shouldBe_chech() {
-        // "ec" is valid coda for 'e'; "ch" is only valid for 'ê'.
+        // "ec" is valid coda for 'e'; "ch" also valid for 'e' (C_ALL matches UniKey).
         assertEquals("chếch", engine.process("cheches"))
     }
 
@@ -181,7 +180,7 @@ class BugReproductionTest {
 
     @Test
     fun testBug5_no_fold_multiCharCoda_staysLiteral() {
-        // Without the fold key, multi-char coda extension should not happen
+        // With C_ALL, "ch"/"nh" are valid codas for plain 'e' — no fold needed.
         assertEquals("lenh", engine.process("lenh"))
         assertEquals("chech", engine.process("chech"))
     }
@@ -189,7 +188,22 @@ class BugReproductionTest {
 
     @Test
     fun testBug5_chechse_shouldBe_chech() {
-        // coda ext 'h' + tone 's' + fold 'e' → chếch
+        // ch is valid coda for 'e'; tone 's' applies sắc; fold 'e'→ê → chếch
+        assertEquals("chếch", engine.process("chechse"))
+    }
+
+
+    @Test
+    fun testBug5_chechs_shouldBe_chech_with_sac() {
+        // ch + e + c + h: 'ch' coda now valid for 'e' (C_ALL), 's' applies sắc
+        assertEquals("chéch", engine.process("chechs"))
+    }
+
+    @Test
+    fun testBug5_chechse_incremental_checs_then_e() {
+        // chechs = "chéch" (complete syllable), then 'e' folds to "chếch"
+        // This tests that the tone+fold hack is NOT needed — the rime table fix handles it
+        assertEquals("chéch", engine.process("chechs"))
         assertEquals("chếch", engine.process("chechse"))
     }
 

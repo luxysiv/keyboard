@@ -210,7 +210,7 @@ object RimeMap {
         val NUCLEI = arrayOf(
             // ── Single vowels — tone on the vowel itself (pos 0) ──
             NucSpec("a",  C_ALL,   0), NucSpec("ă",  C_SHORT, 0),
-            NucSpec("â",  C_SHORT, 0), NucSpec("e",  C_SHORT, 0),
+            NucSpec("â",  C_SHORT, 0), NucSpec("e",  C_ALL,   0),
             NucSpec("ê",  C_ALL,   0), NucSpec("i",  C_I,     0),
             NucSpec("o",  C_SHORT, 0), NucSpec("ô",  C_SHORT, 0),
             NucSpec("ơ",  C_O5,    0), NucSpec("u",  C_SHORT, 0),
