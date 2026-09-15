@@ -8,7 +8,7 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Reproduction tests + UniKey/Laban behavior contracts for the 4 bugs:
+ * Regression tests for Vietnamese engine composition behavior.
  * Bug 1: luan + space + backspace + a → 'luân'
  * Bug 2: l u a n a a → 'luana'
  * Bug 3: xuat + space + backspace + a + s → 'xuất'
@@ -89,7 +89,7 @@ class BugReproductionTest {
 
     // Bug 4 retype path: commit the folded word then type 'e' again. The
     // adopted raw must be fold-last ("luyene") so the retype untoggles to
-    // "luyene" — the Laban Key continuation (old code resumed "luyeen"+e →
+    // "luyene" — the fold-last continuation (old code resumed "luyeen"+e →
     // "luyêne").
     @Test
     fun testBug4_commitLuyen_thenRetype_e_shouldBe_luyene() {
@@ -120,10 +120,10 @@ class BugReproductionTest {
         assertEquals("luana", engine.toDisplayString())
     }
 
-    // ── UniKey VCPairList contracts ──
+    // ── Rime validation contracts ──
     @Test
     fun testUaCodaGroup() {
-        // ua + n/ng/t (UniKey {vs_ua, cs_n/ng/t}).
+        // ua + n/ng/t.
         assertTrue(RimeMap.isValidPrefix(RimeMap.rimeKey("uan")))
         assertTrue(RimeMap.isValidPrefix(RimeMap.rimeKey("uang")))
         assertTrue(RimeMap.isValidPrefix(RimeMap.rimeKey("uat")))
@@ -155,7 +155,7 @@ class BugReproductionTest {
     // ── Bug 5: Multi-char coda + deferred fold — lenhe → lênh, cheches → chếch ──
     @Test
     fun testBug5_lenhe_shouldBe_lenh() {
-        // "en" is valid coda for 'e'; "nh" also valid for 'e' (C_ALL matches UniKey).
+        // "en" and "enh" are valid codas for 'e' (C_ALL).
         assertEquals("lênh", engine.process("lenhe"))
     }
 
@@ -168,7 +168,7 @@ class BugReproductionTest {
 
     @Test
     fun testBug5_cheches_shouldBe_chech() {
-        // "ec" is valid coda for 'e'; "ch" also valid for 'e' (C_ALL matches UniKey).
+        // "ec" and "ech" are valid codas for 'e' (C_ALL).
         assertEquals("chếch", engine.process("cheches"))
     }
 

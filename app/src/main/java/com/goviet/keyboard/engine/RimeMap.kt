@@ -181,8 +181,7 @@ object RimeMap {
             val tnNew: Int,
             val tnOld: Int = tnNew,
             /** Tone position for the closed rime (coda present).  When
-             *  different from [tnNew] the engine reproduces UniKey's
-             *  terminated vs open distinction (e.g. ua→0 open / 1 closed). */
+             *  different from [tnNew] it encodes the terminated vs open distinction. */
             val tnNewCoda: Int = tnNew
         )
 
@@ -200,7 +199,7 @@ object RimeMap {
         val C_OA5   = arrayOf("c","m","n","ng","p","t")               // oă (no p)
         val C_UE    = arrayOf("ch","n","nh","t")                          // ue, uê
         val C_UA4   = arrayOf("c","n","ng","t")                       // uâ
-        val C_UA    = arrayOf("n","ng","t")                            // ua (UniKey VCPairList: uan/uang/uat)
+        val C_UA    = arrayOf("n","ng","t")                            // ua
         val C_UY2   = arrayOf("p","t","ch","n","nh")              // uy
         val C_OO    = arrayOf("c","ng")                           // oo (coong, xoóc)
         val C_UYE   = arrayOf("n","t")                            // uye/uyê

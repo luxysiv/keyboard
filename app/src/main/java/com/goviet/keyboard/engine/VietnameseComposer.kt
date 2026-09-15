@@ -925,7 +925,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         // Telex allows the fold key to come AFTER the coda (bana → bân, uyene →
         // uyên). For adopted words with a foldable folded nucleus + coda we
         // prefer that spelling so a retyped fold key untoggles (commit "luyên"
-        // + 'e' → "luyene", commit "luân" + 'a' → "luana") — the Laban/UniKey
+        // + 'e' → "luyene", commit "luân" + 'a' → "luana") — the standard
         // continuation behavior. The round-trip gate in canonicalRawIfRoundTrips
         // validates the folded-last form and falls back to canonicalRaw.
         val canonicalFoldLast = if (isValid) {
