@@ -110,7 +110,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     data class AdoptResult(
         val isValid: Boolean,
         val onsetLength: Int,
-        val canonicalRaw: String
+        val canonicalRaw: String,
+        val canonicalFoldLast: String? = null
     )
 
     sealed class CompositionResult {
@@ -148,7 +149,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
      */
     fun generateDeconstructedSnapshots(word: String): Pair<String, List<Snapshot>> {
         val adopt = adoptWord(word) ?: return Pair(word, listOf(Snapshot(word)))
-        val canonical = adopt.canonicalRaw
+        val canonical = canonicalRawIfRoundTrips(adopt, word) ?: adopt.canonicalRaw
         val snaps = mutableListOf<Snapshot>()
         val tempState = SyllableState()
         for (i in 0 until canonical.length) {
@@ -231,6 +232,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         if (raw.isEmpty()) return
         matchOnset(raw, out)
         scanBody(raw, out, ScanCtx(if (out.onset.isEmpty()) 0 else OnsetMap.onsetKeyOf(out.onset)))
+    }
+
+    /** Test API: resegment [raw] into a fresh state (the resegment the kernel
+     *  uses for every replay); mirrors [resegment] for display-level tests. */
+    fun replayRawToState(raw: CharSequence, out: SyllableState) {
+        resegment(raw, out)
     }
 
     /**
@@ -555,12 +562,14 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (out.coda.isEmpty() && pos + 1 < len) {
                 val nextChar = raw[pos + 1].lowercaseChar()
                 if (RimeMap.isFoldKey(nextChar)) {
+                    // Fold code from the ORIGINAL nucleus — the untoggle anchor
+                    // must point where the pre-lookahead fold lands.
+                    val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), nextChar)
                     val foldedNuc = RimeMap.foldCodaValid(out.nucleus, ctx.nucKey, nextChar, c, out.tone.index)
                     if (foldedNuc != null) {
                         out.nucleus = foldedNuc
                         ctx.nucKey = RimeMap.rimeKey(out.nucleus)
-                        ctx.fold.key = nextChar
-                        ctx.fold.rawPos = pos + 1
+                        ctx.fold.set(nextChar, RimeMap.foldPos(foldCode), pos + 1)
                         out.coda += c
                         ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
                         return 2  // skip coda char + fold key
@@ -574,12 +583,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (RimeMap.isFoldKey(foldKey)) {
                         val targetTone = Tone.fromKey(toneKey)
                         if (targetTone != null && targetTone != Tone.NONE) {
+                            val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
                             val foldedNuc = RimeMap.foldCodaValid(out.nucleus, ctx.nucKey, foldKey, c, targetTone.index)
                             if (foldedNuc != null) {
                                 out.nucleus = foldedNuc
                                 ctx.nucKey = RimeMap.rimeKey(out.nucleus)
-                                ctx.fold.key = foldKey
-                                ctx.fold.rawPos = pos + 2
+                                ctx.fold.set(foldKey, RimeMap.foldPos(foldCode), pos + 2)
                                 out.coda += c
                                 ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
                                 out.tone = targetTone
@@ -881,7 +890,17 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             VietnameseUnicode.applyCasingFromRaw(sb.toString(), word)
         } else { word }
 
-        return AdoptResult(isValid, onset.length, canonicalRaw)
+        // Telex allows the fold key to come AFTER the coda (bana → bân, uyene →
+        // uyên). For adopted words with a foldable folded nucleus + coda we
+        // prefer that spelling so a retyped fold key untoggles (commit "luyên"
+        // + 'e' → "luyene", commit "luân" + 'a' → "luana") — the Laban/UniKey
+        // continuation behavior. The round-trip gate in canonicalRawIfRoundTrips
+        // validates the folded-last form and falls back to canonicalRaw.
+        val canonicalFoldLast = if (isValid) {
+            canonicalFoldLastRaw(onset, nucleus, coda, validTone, word)
+        } else null
+
+        return AdoptResult(isValid, onset.length, canonicalRaw, canonicalFoldLast)
     }
 
     /**
@@ -892,6 +911,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
      */
     fun canonicalRawIfRoundTrips(adopt: AdoptResult?, display: String): String? {
         if (adopt == null || !adopt.isValid) return null
+        adopt.canonicalFoldLast?.let { foldedLast ->
+            if (process(foldedLast) == display) return foldedLast
+        }
         val canonical = adopt.canonicalRaw
         return if (process(canonical) == display) canonical else null
     }
@@ -931,6 +953,50 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 firstUpper -> raw.replaceFirstChar { it.uppercase() }
                 else -> raw
             }
+        }
+
+        /**
+         * Fold-last canonical raw for a folded nucleus + coda: plain nucleus +
+         * coda + the single Telex fold key + tone key (bân → "bana", uyên →
+         * "uyene", xuất → "xuatas"). Only single-fold nuclei (one folded vowel)
+         * qualify — multi-fold w-compounds (ươ/uơ) keep the fold-first spelling
+         * through [nucleusToRaw]. Returns null when no reordering applies
+         * (no coda, nothing folded, or a compound fold).
+         */
+        fun canonicalFoldLastRaw(
+            onset: String, nucleus: String, coda: String,
+            tone: Tone, word: String
+        ): String? {
+            if (nucleus.isEmpty() || coda.isEmpty()) return null
+            val plain = StringBuilder(nucleus.length)
+            var foldKey: Char? = null
+            var foldedCount = 0
+            for (ch in nucleus) {
+                when (ch.lowercaseChar()) {
+                    'â' -> { plain.append('a'); foldKey = foldKey ?: 'a'; foldedCount++ }
+                    'ê' -> { plain.append('e'); foldKey = foldKey ?: 'e'; foldedCount++ }
+                    'ô' -> { plain.append('o'); foldKey = foldKey ?: 'o'; foldedCount++ }
+                    'ă' -> { plain.append('a'); foldKey = foldKey ?: 'w'; foldedCount++ }
+                    'ơ' -> { plain.append('o'); foldKey = foldKey ?: 'w'; foldedCount++ }
+                    'ư' -> { plain.append('u'); foldKey = foldKey ?: 'w'; foldedCount++ }
+                    else -> plain.append(ch)
+                }
+            }
+            val fk = foldKey ?: return null
+            if (foldedCount != 1) return null
+
+            val sb = StringBuilder()
+            when (onset.lowercase()) {
+                "đ" -> sb.append(if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd")
+                else -> sb.append(onset)
+            }
+            sb.append(plain)
+            sb.append(coda)
+            sb.append(fk)
+            val nucAllUpper = nucleus.all { it.isUpperCase() }
+            val toneKey = tone.key
+            if (toneKey != null) sb.append(if (nucAllUpper) toneKey.uppercaseChar() else toneKey)
+            return VietnameseUnicode.applyCasingFromRaw(sb.toString(), word)
         }
     }
 

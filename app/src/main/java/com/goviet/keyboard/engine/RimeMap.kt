@@ -179,7 +179,11 @@ object RimeMap {
             val nucleus: String,
             val codas: Array<String>,
             val tnNew: Int,
-            val tnOld: Int = tnNew
+            val tnOld: Int = tnNew,
+            /** Tone position for the closed rime (coda present).  When
+             *  different from [tnNew] the engine reproduces UniKey's
+             *  terminated vs open distinction (e.g. ua→0 open / 1 closed). */
+            val tnNewCoda: Int = tnNew
         )
 
         // Coda groups — exact pairs that actually exist in Vietnamese
@@ -196,6 +200,7 @@ object RimeMap {
         val C_OA5   = arrayOf("c","m","n","ng","p","t")               // oă (no p)
         val C_UE    = arrayOf("ch","n","nh","t")                          // ue, uê
         val C_UA4   = arrayOf("c","n","ng","t")                       // uâ
+        val C_UA    = arrayOf("n","ng","t")                            // ua (UniKey VCPairList: uan/uang/uat)
         val C_UY2   = arrayOf("p","t","ch","n","nh")              // uy
         val C_OO    = arrayOf("c","ng")                           // oo (coong, xoóc)
         val C_UYE   = arrayOf("n","t")                            // uye/uyê
@@ -218,7 +223,7 @@ object RimeMap {
             NucSpec("oe", C_OE,    1, 0), NucSpec("ue", C_UE,   1, 0),
             NucSpec("uy", C_UY2,   1, 0), NucSpec("uâ", C_UA4,  1, 1),
             NucSpec("uê", C_UE,    1, 1), NucSpec("uô", C_SHORT,1, 1),
-            NucSpec("uo", C_SHORT, 1, 1), NucSpec("ua", C_NONE, 0),
+            NucSpec("uo", C_SHORT, 1, 1), NucSpec("ua", C_UA,   0, 0, tnNewCoda=1),
             NucSpec("ưa", C_NONE,  0),    NucSpec("uơ", C_NONE, 1),
             NucSpec("ươ", C_SHORT, 1, 1), NucSpec("ia", C_NONE, 0),
             NucSpec("ie", C_SHORT, 1, 1), NucSpec("iê", C_SHORT,1, 1),
@@ -282,7 +287,7 @@ object RimeMap {
                 // With a final consonant (coda), the tone always lands on the main
                 // vowel regardless of old/new placement style (hoàn, toán — never
                 // hòan/tóan). tnOld only differs for open rimes oa/oe/uy.
-                table.insert(rk, packData(1, 1, if (isStop) 1 else 0, spec.tnNew, spec.tnNew))
+                table.insert(rk, packData(1, 1, if (isStop) 1 else 0, spec.tnNewCoda, spec.tnNewCoda))
             }
         }
 

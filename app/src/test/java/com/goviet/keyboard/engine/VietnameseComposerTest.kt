@@ -1047,7 +1047,7 @@ class VietnameseComposerTest {
     @Test
     fun testWordDeconstructionAtCursor() {
         val (canonical, snapshots) = engine.generateDeconstructedSnapshots("chuyển")
-        assertEquals("chuyeenr", canonical)
+        assertEquals("chuyener", canonical)
         assertTrue(snapshots.isNotEmpty())
         assertEquals("chuyển", snapshots.last().displayText)
     }
