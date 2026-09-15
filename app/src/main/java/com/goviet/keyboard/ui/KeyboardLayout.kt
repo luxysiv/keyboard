@@ -98,8 +98,8 @@ object KeyboardLayout {
         }
         for (letter in row3) {
             when (letter) {
-                "SHIFT" -> keys.add(Key(code = "SHIFT", label = "\u21E7", isFunctional = true, weight = 1.4f))
-                "BACKSPACE" -> keys.add(Key(code = "BACKSPACE", label = "\u232B", isFunctional = true, weight = 1.4f))
+                "SHIFT" -> keys.add(Key(code = "SHIFT", label = "\u21E7", isFunctional = true, weight = if (isSplit) 1.25f else 1.4f))
+                "BACKSPACE" -> keys.add(Key(code = "BACKSPACE", label = "\u232B", isFunctional = true, weight = if (isSplit) 1.25f else 1.4f))
                 else -> {
                     val opts = getLongPressOptions(letter, shiftState > 0)
                     keys.add(Key(
@@ -115,25 +115,25 @@ object KeyboardLayout {
 
         // Row 4 — space row
         if (isSplit) {
-            keys.add(Key(code = "SYM", label = "?123", isFunctional = true, weight = 1.3f))
+            keys.add(Key(code = "SYM", label = "?123", isFunctional = true, weight = 1.2f))
             keys.add(Key(
                 code = ",",
                 label = ",",
                 isFunctional = true,
-                weight = 1.1f,
+                weight = 1.0f,
                 longPressOptions = symbolLongPressMap[","]
             ))
-            keys.add(Key(code = "SPACE", label = "Space", weight = 2.6f))
-            keys.add(Key(code = "SPACE", label = "Space", weight = 2.6f))
+            keys.add(Key(code = "SPACE", label = "Space", weight = 2.8f))
+            keys.add(Key(code = "SPACE", label = "Space", weight = 2.8f))
             keys.add(Key(
                 code = ".",
                 label = ".",
                 secondaryLabel = "\u2026",
                 isFunctional = true,
-                weight = 1.1f,
+                weight = 1.0f,
                 longPressOptions = symbolLongPressMap["."]
             ))
-            keys.add(Key(code = "ENTER", label = "Enter", isSpecialEnter = true, isFunctional = true, weight = 1.3f))
+            keys.add(Key(code = "ENTER", label = "Enter", isSpecialEnter = true, isFunctional = true, weight = 1.2f))
         } else {
             keys.add(Key(code = "SYM", label = "?123", isFunctional = true, weight = 1.4f))
             keys.add(Key(
@@ -185,33 +185,33 @@ object KeyboardLayout {
         for (sym in row2) addSymbolKey(keys, sym)
 
         val toggleLabel = if (!isPage2) "=\\" else "?123"
-        keys.add(Key(code = "SWITCH_PAGE", label = toggleLabel, isFunctional = true, weight = 1.4f))
+        keys.add(Key(code = "SWITCH_PAGE", label = toggleLabel, isFunctional = true, weight = if (isSplit) 1.25f else 1.4f))
 
         for (sym in row3) addSymbolKey(keys, sym)
 
-        keys.add(Key(code = "BACKSPACE", label = "\u232B", isFunctional = true, weight = 1.4f))
+        keys.add(Key(code = "BACKSPACE", label = "\u232B", isFunctional = true, weight = if (isSplit) 1.25f else 1.4f))
 
         // Bottom control row
         if (isSplit) {
-            keys.add(Key(code = "ABC", label = "ABC", isFunctional = true, weight = 1.3f))
+            keys.add(Key(code = "ABC", label = "ABC", isFunctional = true, weight = 1.2f))
             keys.add(Key(
                 code = ",",
                 label = ",",
                 isFunctional = true,
-                weight = 1.1f,
+                weight = 1.0f,
                 longPressOptions = symbolLongPressMap[","]
             ))
-            keys.add(Key(code = "SPACE", label = "Space", weight = 2.6f))
-            keys.add(Key(code = "SPACE", label = "Space", weight = 2.6f))
+            keys.add(Key(code = "SPACE", label = "Space", weight = 2.8f))
+            keys.add(Key(code = "SPACE", label = "Space", weight = 2.8f))
             keys.add(Key(
                 code = ".",
                 label = ".",
                 secondaryLabel = "\u2026",
                 isFunctional = true,
-                weight = 1.1f,
+                weight = 1.0f,
                 longPressOptions = symbolLongPressMap["."]
             ))
-            keys.add(Key(code = "ENTER", label = "Enter", isSpecialEnter = true, isFunctional = true, weight = 1.3f))
+            keys.add(Key(code = "ENTER", label = "Enter", isSpecialEnter = true, isFunctional = true, weight = 1.2f))
         } else {
             keys.add(Key(code = "ABC", label = "ABC", isFunctional = true, weight = 1.4f))
             keys.add(Key(
