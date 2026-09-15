@@ -283,7 +283,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     if (raw[onsetLen - 1].lowercaseChar() == 'i') {
                         var vowelAfter = false
                         for (k in onsetLen until len) {
-                            if (RimeMap.isBaseVowel(raw[k])) { vowelAfter = true; break }
+                            val ch = raw[k].lowercaseChar()
+                            if (RimeMap.isBaseVowel(ch) || ch == 'w') { vowelAfter = true; break }
                         }
                         if (!vowelAfter) continue
                     }

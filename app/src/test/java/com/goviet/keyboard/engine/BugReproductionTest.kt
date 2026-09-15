@@ -207,4 +207,13 @@ class BugReproductionTest {
         assertEquals("chếch", engine.process("chechse"))
     }
 
+
+    @Test
+    fun testGiw_shouldBe_giU() {
+        // Non-directW: standalone 'w' → ư with consonant onset
+        assertEquals("giư", engine.process("giw"))
+        assertEquals("sư", engine.process("sw"))
+        assertEquals("tư", engine.process("tw"))
+    }
+
 }
