@@ -151,4 +151,39 @@ class BugReproductionTest {
         assertEquals("tuân", engine.process("tuana"))
         assertEquals("luân", engine.process("luana"))
     }
+
+    // ── Bug 5: Multi-char coda + deferred fold — lenhe → lênh, cheches → chếch ──
+    @Test
+    fun testBug5_lenhe_shouldBe_lenh() {
+        // "en" is valid coda for 'e'; "nh" is only valid for 'ê'.
+        // The fold key 'e' at pos+1 triggers e→ê making "nh" a valid coda.
+        assertEquals("lênh", engine.process("lenhe"))
+    }
+
+    @Test
+    fun testBug5_lenhes_shouldBe_lenh_with_tone() {
+        // lenhe + s = lếnh (s = sắc tone applied after fold)
+        assertEquals("lếnh", engine.process("lenhes"))
+        assertEquals("lềnh", engine.process("lenhef"))
+    }
+
+    @Test
+    fun testBug5_cheches_shouldBe_chech() {
+        // "ec" is valid coda for 'e'; "ch" is only valid for 'ê'.
+        assertEquals("chếch", engine.process("cheches"))
+    }
+
+    @Test
+    fun testBug5_theche_shouldBe_thech() {
+        // th + ech + fold → thêch
+        assertEquals("thêch", engine.process("theche"))
+    }
+
+    @Test
+    fun testBug5_no_fold_multiCharCoda_staysLiteral() {
+        // Without the fold key, multi-char coda extension should not happen
+        assertEquals("lenh", engine.process("lenh"))
+        assertEquals("chech", engine.process("chech"))
+    }
+
 }

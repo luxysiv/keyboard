@@ -595,6 +595,41 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     }
                 }
             }
+            // Deferred fold + multi-char coda extension: e.g. "lenh"+"e" →
+            // "lênh", "chech"+"e" → "chếch".  The current char [c] can't
+            // form a valid single-char coda extension, but out.coda+c
+            // becomes valid when a fold key transforms the nucleus
+            // (e→ê allows "nh"/"ch" codas that plain "e" rejects).
+            if (!ctx.syllableLocked && out.coda.isNotEmpty() && pos + 1 < len) {
+                val foldKey = raw[pos + 1].lowercaseChar()
+                if (RimeMap.isFoldKey(foldKey)) {
+                    val extendedCoda = out.coda + c
+                    val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
+                    // Validate with the full multi-char coda (foldCodaValid only takes Char tail).
+                    val foldedNuc = RimeMap.applyFold(out.nucleus, foldCode)
+                    val codaValid = foldCode != 0 && foldedNuc != out.nucleus &&
+                        RimeMap.isValidPrefixWithTone(
+                            RimeMap.keyCat(foldedNuc, foldedNuc.length, extendedCoda, extendedCoda.length),
+                            out.tone.index)
+                    if (codaValid) {
+                        out.nucleus = foldedNuc
+                        ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                        ctx.fold.set(foldKey, RimeMap.foldPos(foldCode), pos + 1)
+                        out.coda = extendedCoda
+                        ctx.rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
+                        // Tone key immediately after fold key?
+                        if (pos + 2 < len && RimeMap.isToneKey(raw[pos + 2].lowercaseChar())) {
+                            val targetTone = Tone.fromKey(raw[pos + 2].lowercaseChar())
+                            if (targetTone != null && targetTone != Tone.NONE) {
+                                out.tone = targetTone
+                                ctx.lastToneKey = raw[pos + 2].lowercaseChar()
+                                return 3  // skip c + foldKey + toneKey
+                            }
+                        }
+                        return 2  // skip c + foldKey
+                    }
+                }
+            }
         }
         // Not a valid coda → literal + hard lock.
         lockLiteral(out, ctx, c)
