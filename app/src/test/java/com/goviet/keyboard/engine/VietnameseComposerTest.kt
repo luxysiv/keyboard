@@ -1893,6 +1893,47 @@ class VietnameseComposerTest {
         assertEquals("v", engine.backspace())
         assertEquals("", engine.backspace())
     }
+
+    @Test
+    fun testRuleBasedVietnameseSyllablePrefixValidation() {
+        // Valid syllables and prefixes derived from phonotactics
+        val validPrefixes = listOf(
+            "b", "ba", "ban", "bang", "banh",
+            "k", "ke", "ken", "keng", "ki", "kia", "kinh", "ky",
+            "c", "ca", "can", "cang", "co", "con", "cong", "cu", "cung",
+            "gh", "ghe", "ghen", "ghi", "ghinh", "ghien",
+            "g", "ga", "gan", "gang", "go", "gong", "gu", "gung",
+            "ngh", "nghe", "nghen", "nghi", "nghiep", "nghien",
+            "ng", "nga", "ngang", "ngo", "ngong", "ngu", "ngung",
+            "q", "qu", "qua", "quan", "que", "quen", "quy", "quyen", "quo",
+            "gi", "gia", "gian", "giang", "gio", "giong", "giu", "giup", "gie", "gieng"
+        )
+        for (p in validPrefixes) {
+            assertTrue("Prefix '$p' should be valid", RimeMap.isSyllablePrefixValid(p))
+        }
+
+        // Invalid combinations according to Vietnamese orthography rules
+        val invalidPrefixes = listOf(
+            "ce", "cen", "ci", "cinh", "cy",
+            "ka", "kan", "kang", "ko", "kong", "ku", "kung",
+            "gha", "ghan", "gho", "ghong", "ghu",
+            "ngha", "nghan", "ngho", "nghong", "nghu",
+            "quu", "quuc", "quuo",
+            "gii", "giie", "giiec"
+        )
+        for (p in invalidPrefixes) {
+            assertFalse("Prefix '$p' should be invalid", RimeMap.isSyllablePrefixValid(p))
+        }
+
+        // Display prefixes with diacritics
+        assertTrue(RimeMap.isSyllableDisplayPrefixValid("bánh"))
+        assertTrue(RimeMap.isSyllableDisplayPrefixValid("nghiêng"))
+        assertTrue(RimeMap.isSyllableDisplayPrefixValid("khuyến"))
+        assertTrue(RimeMap.isSyllableDisplayPrefixValid("quơ"))
+        assertFalse(RimeMap.isSyllableDisplayPrefixValid("cê"))
+        assertFalse(RimeMap.isSyllableDisplayPrefixValid("kà"))
+        assertFalse(RimeMap.isSyllableDisplayPrefixValid("ghó"))
+    }
 // 
 // }
 
