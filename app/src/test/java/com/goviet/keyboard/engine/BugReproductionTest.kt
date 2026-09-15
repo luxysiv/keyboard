@@ -186,4 +186,11 @@ class BugReproductionTest {
         assertEquals("chech", engine.process("chech"))
     }
 
+
+    @Test
+    fun testBug5_chechse_shouldBe_chech() {
+        // coda ext 'h' + tone 's' + fold 'e' → chếch
+        assertEquals("chếch", engine.process("chechse"))
+    }
+
 }

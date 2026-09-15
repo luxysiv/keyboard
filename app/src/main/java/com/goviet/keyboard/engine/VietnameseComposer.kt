@@ -629,6 +629,34 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         return 2  // skip c + foldKey
                     }
                 }
+                // Deferred fold after a tone key + multi-char coda extension:
+                // "chechs" + "e" → "chếch" (coda ext 'h' + tone 's' + fold 'e').
+                if (!ctx.syllableLocked && pos + 2 < len &&
+                    RimeMap.isToneKey(raw[pos + 1].lowercaseChar()) &&
+                    RimeMap.isFoldKey(raw[pos + 2].lowercaseChar())) {
+                    val toneKey = raw[pos + 1].lowercaseChar()
+                    val foldKey = raw[pos + 2].lowercaseChar()
+                    val targetTone = Tone.fromKey(toneKey)
+                    if (targetTone != null && targetTone != Tone.NONE) {
+                        val extendedCoda = out.coda + c
+                        val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
+                        val foldedNuc = RimeMap.applyFold(out.nucleus, foldCode)
+                        val codaValid = foldCode != 0 && foldedNuc != out.nucleus &&
+                            RimeMap.isValidPrefixWithTone(
+                                RimeMap.keyCat(foldedNuc, foldedNuc.length, extendedCoda, extendedCoda.length),
+                                targetTone.index)
+                        if (codaValid) {
+                            out.nucleus = foldedNuc
+                            ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+                            ctx.fold.set(foldKey, RimeMap.foldPos(foldCode), pos + 2)
+                            out.coda = extendedCoda
+                            ctx.rimeKey = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
+                            out.tone = targetTone
+                            ctx.lastToneKey = toneKey
+                            return 3  // skip c + toneKey + foldKey
+                        }
+                    }
+                }
             }
         }
         // Not a valid coda → literal + hard lock.
