@@ -410,11 +410,13 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
             return
         }
-        // Nucleus empty but onset ends with a vowel ('gi', 'qu'): defer tone
-        // for the later rime vowel.  Plain consonant onsets (d, b...) have no
-        // vowel to anchor the tone, so the key stays literal (dsa → dsa).
+        // Nucleus empty but onset ends with 'i' ('gi'): the i can act as a
+        // nucleus (gí), so defer the tone for the later rime vowel (gisa →
+        // giá).  Other onsets are pure consonants — "qu" is a consonant
+        // cluster, its u never becomes a nucleus — so the tone key stays
+        // literal (qus → qus, dsa → dsa).
         if (out.nucleus.isEmpty() && out.onset.isNotEmpty() &&
-            RimeMap.isBaseVowel(out.onset[out.onset.length - 1])) {
+            out.onset[out.onset.length - 1].lowercaseChar() == 'i') {
             if (targetTone != null && targetTone != Tone.NONE) {
                 // Defer tone — cancel if same key pressed twice
                 if (ctx.pendingTone != Tone.NONE && cLow == ctx.pendingToneKey) {

@@ -237,11 +237,15 @@ class BugReproductionTest {
     }
 
     @Test
-    fun testQuToneBeforeVowel() {
-        // qu onset ends with 'u' → deferred tone applies to the rime vowel
-        assertEquals("quá", engine.process("qusa"))
-        assertEquals("quà", engine.process("qufa"))
+    fun testQuToneBeforeVowelStaysLiteral() {
+        // "qu" is a consonant cluster — its 'u' is never a nucleus, so a tone
+        // key before a vowel stays literal (qus, qusa), unlike "gi" (gisa).
+        assertEquals("qus", engine.process("qus"))
+        assertEquals("qusa", engine.process("qusa"))
+        assertEquals("qufa", engine.process("qufa"))
         assertEquals("quu", engine.process("quu"))
+        // Tone after the rime vowel still transforms normally
+        assertEquals("quá", engine.process("quas"))
     }
 
     @Test
