@@ -267,15 +267,13 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             if (OnsetMap.isValidOnset(raw, 0, onsetLen)) {
                 if (onsetLen == 1 && RimeMap.isBaseVowel(raw[0])) continue
                 if (!options.directW && onsetLen == 1 && raw[0].lowercaseChar() == 'w') continue
-                if (onsetLen > 1) {
-                    if (raw[onsetLen - 1].lowercaseChar() == 'i') {
-                        var vowelAfter = false
-                        for (k in onsetLen until len) {
-                            val ch = raw[k].lowercaseChar()
-                            if (RimeMap.isBaseVowel(ch) || ch == 'w') { vowelAfter = true; break }
-                        }
-                        if (!vowelAfter) continue
+                if (onsetLen > 1 && RimeMap.isGiOnset(raw, 0, onsetLen)) {
+                    var vowelAfter = false
+                    for (k in onsetLen until len) {
+                        val ch = raw[k].lowercaseChar()
+                        if (RimeMap.isBaseVowel(ch) || ch == 'w') { vowelAfter = true; break }
                     }
+                    if (!vowelAfter) continue
                 }
                 onsetEnd = onsetLen
                 break
@@ -389,8 +387,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
             return
         }
-        if (out.nucleus.isEmpty() && out.onset.isNotEmpty() &&
-            out.onset[out.onset.length - 1].lowercaseChar() == 'i') {
+        if (out.nucleus.isEmpty() && RimeMap.isGiOnset(out.onset)) {
             if (targetTone != null && targetTone != Tone.NONE) {
                 if (ctx.pendingTone != Tone.NONE && cLow == ctx.pendingToneKey) {
                     ctx.pendingTone = Tone.NONE; ctx.pendingToneKey = '\u0000'
@@ -808,7 +805,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var remainingAfterNucleus = remainingAfterOnset.substring(remIdx)
         var remLower = remainingAfterNucleus.lowercase()
 
-        if (nucleus.isEmpty() && onset.length > 1 && onset.last().lowercaseChar() == 'i') {
+        if (nucleus.isEmpty() && RimeMap.isGiOnset(onset)) {
             val shorterOnset = baseWord.substring(0, onset.length - 1)
             if (OnsetMap.isCompleteOnset(shorterOnset.lowercase(), 0, shorterOnset.length)) {
                 onset = shorterOnset

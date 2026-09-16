@@ -648,6 +648,28 @@ object RimeMap {
         return if (oldTonePlacement) toneOldAt(i) else toneNewAt(i)
     }
 
+    /** True when [onset] is the 'gi' onset — its final 'i' doubles as a nucleus. */
+    @JvmStatic
+    fun isGiOnset(cs: CharSequence, start: Int, length: Int): Boolean {
+        if (length < 2) return false
+        val last = cs[start + length - 1]
+        return last == 'i' || last == 'I'
+    }
+
+    @JvmStatic
+    fun isGiOnset(onset: CharSequence): Boolean = isGiOnset(onset, 0, onset.length)
+
+    /** True when [onset] starts with 'q' — the 'qu' cluster (its 'u' is never a nucleus). */
+    @JvmStatic
+    fun isQuOnset(cs: CharSequence, start: Int, length: Int): Boolean {
+        if (length == 0) return false
+        val first = cs[start]
+        return first == 'q' || first == 'Q'
+    }
+
+    @JvmStatic
+    fun isQuOnset(onset: CharSequence): Boolean = isQuOnset(onset, 0, onset.length)
+
     /**
      * Determine tone mark position with onset prefix preprocessing (qu/gi).
      */
@@ -661,10 +683,8 @@ object RimeMap {
         if (rimeLen > 1 && onsetLen > 0) {
             val isRimeFirstU = rime[0] == 'u' || rime[0] == 'U'
             val isRimeFirstI = rime[0] == 'i' || rime[0] == 'I'
-            val isQ = (onset[onsetLen - 1] == 'q' || onset[onsetLen - 1] == 'Q') ||
-                    (onsetLen >= 2 && (onset[onsetLen - 2] == 'q' || onset[onsetLen - 2] == 'Q') && (onset[onsetLen - 1] == 'u' || onset[onsetLen - 1] == 'U'))
-            val isG = (onset[onsetLen - 1] == 'g' || onset[onsetLen - 1] == 'G') ||
-                    (onsetLen >= 2 && (onset[onsetLen - 2] == 'g' || onset[onsetLen - 2] == 'G') && (onset[onsetLen - 1] == 'i' || onset[onsetLen - 1] == 'I'))
+            val isQ = isQuOnset(onset)
+            val isG = isGiOnset(onset)
             if (isRimeFirstU && isQ) { rimeStart = 1; offset = 1 }
             else if (isRimeFirstI && isG) { rimeStart = 1; offset = 1 }
         }
@@ -756,6 +776,11 @@ object RimeMap {
         return sb.toString()
     }
     private fun onsetAllowsFirstVowel(onset: String, vowel: Char): Boolean {
+        if (isGiOnset(onset)) return true
+        if (isQuOnset(onset)) {
+            return vowel == 'a' || vowel == 'e' || vowel == 'i' ||
+                   vowel == 'o' || vowel == 'y'
+        }
         return when (onset) {
             "c" -> vowel == 'a' || vowel == 'ă' || vowel == 'â' ||
                    vowel == 'o' || vowel == 'ô' || vowel == 'ơ' ||
@@ -769,9 +794,6 @@ object RimeMap {
                     vowel == 'o' || vowel == 'ô' || vowel == 'ơ' ||
                     vowel == 'u' || vowel == 'ư'
             "ngh" -> vowel == 'e' || vowel == 'ê' || vowel == 'i'
-            "qu" -> vowel == 'a' || vowel == 'e' || vowel == 'i' ||
-                    vowel == 'o' || vowel == 'y'
-            "gi" -> true
             else -> true
         }
     }
@@ -779,23 +801,21 @@ object RimeMap {
     /** Generate syllable prefix table from onset rules + _nuclei/codas. */
     private fun generateSyllableTable() {
         _sylTable = LongArray(TABLE_SIZE)
-        val onsets = arrayOf(
-            "ngh", "ng", "nh", "th", "tr", "ch", "ph", "kh", "gh", "gi", "qu",
-            "b", "c", "d", "đ", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x"
-        )
-        for (onset in onsets) {
+        for (onset in OnsetMap.ALL_ONSETS) {
+            if (onset == "w") continue
             sylInsert(sylPackKey(onset))
             for (len in 1 until onset.length) {
                 sylInsert(sylPackKey(onset.substring(0, len)))
             }
         }
         for (spec in _nuclei) sylInsert(sylPackKey(spec.nucleus))
-        for (onset in onsets) {
+        for (onset in OnsetMap.ALL_ONSETS) {
+            if (onset == "w") continue
             for (spec in _nuclei) {
                 val nuc = spec.nucleus
                 val firstChar = nuc[0].lowercaseChar()
                 if (!onsetAllowsFirstVowel(onset, firstChar)) continue
-                val syllable = if (onset == "gi" && (nuc == "i" || nuc[0] == 'i')) {
+                val syllable = if (isGiOnset(onset) && (nuc == "i" || nuc[0] == 'i')) {
                     if (nuc == "i") "gi" else "gi" + nuc.substring(1)
                 } else {
                     "$onset$nuc"
