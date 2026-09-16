@@ -23,33 +23,6 @@
 
 Gõ lại cùng phím = untoggle (a+a+a → a).
 
-## Dấu
-
-```
- "luan" + s → "luân"    "luân" + s → "luan"
- "qu" + a + s → "quá"   "gi" + a → "gia"  (+ s → "giá")
-```
-
-## Onset rules
-
-```
- c, g, ng  → back vowels  (a,ă,â,o,ô,ơ,u,ư)
- k, gh, ngh → front vowels (e,ê,i,y)
- qu        → u thuộc onset
- gi        → nucleus co lại khi i theo sau
-```
-
-## Coda & deferred fold
-
-```
- "tuan" + a → "tuân"     "tuan" + a + a → "tuanna"
- "luan" + s + a → "luân a"
-```
-
-## Backspace
-
-Buffer thô giữ nguyên, resegment lại — không mất dấu.
-
 ## Build
 
 ```bash
