@@ -685,10 +685,12 @@ class ImeInputConnectionController(
                         inputEngine.insertComposingKey(composingCursorIndex, actualKey[0])
                         composingCursorIndex += actualKey.length
 
-                        val casedDisplay = if (inputEngine.composeAsVietnamese) {
-                            inputEngine.toDisplayString()
+                        val casedDisplay: String
+                        if (inputEngine.composeAsVietnamese) {
+                            inputEngine.toCasedDisplayBuffer(displayBuf)
+                            casedDisplay = displayBuf.toStringVal()
                         } else {
-                            compileRawDisplay()
+                            casedDisplay = compileRawDisplay()
                         }
 
                         updateComposingUI(ic, lastLen, casedDisplay)
@@ -766,8 +768,8 @@ class ImeInputConnectionController(
      */
     fun compileRawDisplay(): String {
         if (!inputEngine.isComposing()) return ""
-        inputEngine.toDisplayBuffer(displayBuf)
-        return VietnameseUnicode.applyCasingFromRaw(displayBuf, inputEngine.composingRaw())
+        inputEngine.toCasedDisplayBuffer(displayBuf)
+        return displayBuf.toStringVal()
     }
 
     /** Display caret offset (chars) for the current raw caret — zero-alloc. */
@@ -775,7 +777,7 @@ class ImeInputConnectionController(
         val raw = inputEngine.composingRaw()
         val end = composingCursorIndex.coerceIn(0, inputEngine.composingRawLength())
         if (end <= 0) return 0
-        inputEngine.compileRaw(raw, inputEngine.composeAsVietnamese, displayBuf, end)
+        inputEngine.compileRawInto(raw, inputEngine.composeAsVietnamese, displayBuf, end)
         return displayBuf.len
     }
 
@@ -794,7 +796,7 @@ class ImeInputConnectionController(
         if (displayOffset >= display.length) return raw.length
         if (!vietnamese) return displayOffset.coerceAtMost(raw.length)
         for (i in 0..raw.length) {
-            inputEngine.compileRaw(raw, inputEngine.composeAsVietnamese, displayBuf, i)
+            inputEngine.compileRawInto(raw, inputEngine.composeAsVietnamese, displayBuf, i)
             if (displayPrefixMatches(displayBuf, display, displayOffset)) return i
         }
         return displayOffset.coerceAtMost(raw.length)
@@ -810,8 +812,9 @@ class ImeInputConnectionController(
 
     fun compileText(raw: String): String {
         if (raw.isEmpty()) return ""
-        inputEngine.compileRaw(raw, vietnamese = true, displayBuf)
-        return VietnameseUnicode.applyCasingFromRaw(displayBuf, raw)
+        inputEngine.compileRawInto(raw, vietnamese = true, displayBuf)
+        displayBuf.applyCasingFromRaw(raw)
+        return displayBuf.toStringVal()
     }
 
     private fun tryExpandMacro(raw: String, wordBreak: String): String? {
