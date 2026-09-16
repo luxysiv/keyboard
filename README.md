@@ -1,127 +1,122 @@
-# GoViet Keyboard Engine
+# GoViet — Engine gõ tiếng Việt Telex cho Android
 
-Vietnamese Telex input method engine for Android. Zero-allocation hot path, rule-based syllable validation, UniKey-compatible behavior.
+Bộ gõ tiếng Việt Telex trên Android. Hot path không cấp phát String, kiểm tra âm tiết bằng luật chính tả, tương thích hành vi UniKey.
 
-## Engine Architecture
+## Kiến trúc engine
 
 ```
 KeyEvent
   → Composer (VietnameseComposer)
-  → OwnedBuffer (zero-alloc scratch)
+  → OwnedBuffer (zero-alloc)
   → ImeInputConnectionController
   → Android InputConnection
 ```
 
-### Core Design Principles
+### Nguyên tắc thiết kế
 
-- **Zero String allocation on the hot path.** Every keystroke goes through `OwnedBuffer` (a reusable `CharArray`-backed `CharSequence`). String is only materialised once via `setComposingText` at the `InputConnection` boundary.
-- **Single source of truth for syllable state.** `VietnameseComposer.SyllableState` holds onset/nucleus/coda/tone. Display is derived on demand — no duplicated state between engine and renderer.
-- **Rule-based phonotactics, not corpus lookup.** Syllable prefix validation is generated at init from Vietnamese onset rules + RimeMap nuclei/codas. No hardcoded 2700-entry string table.
-- **O(1) flat-table lookups.** RimeMap and OnsetMap use Fibonacci-hash open-addressing tables (16384 / 2048 slots) with 5-bit character packing. No `HashMap`, no boxing, no GC pressure.
+- **Không cấp phát String trên hot path.** Mỗi phím bấm đi qua `OwnedBuffer` (CharArray tái sử dụng, implements `CharSequence`). String chỉ được tạo một lần duy nhất khi gọi `setComposingText()` tại biên giới `InputConnection`.
+- **Nguồn sự thật duy nhất cho trạng thái âm tiết.** `VietnameseComposer.SyllableState` giữ onset/nucleus/coda/tone. Hiển thị được sinh ra khi cần — không có trạng thái trùng lặp giữa engine và renderer.
+- **Kiểm tra âm tiết bằng luật, không lookup từ điển.** Bảng tiền tố âm tiết được sinh tại init từ luật onset tiếng Việt + nuclei/codas trong RimeMap. Không dùng bảng 2700 chuỗi cứng.
+- **Tra cứu O(1) bằng flat table.** RimeMap và OnsetMap dùng Fibonacci-hash open-addressing (16384 / 2048 ô) với đóng gói ký tự 5-bit. Không `HashMap`, không boxing, không GC pressure.
 
-## Key Components
+## Các thành phần chính
 
 ### RimeMap (`RimeMap.kt`)
 
-Encodes all valid Vietnamese rimes (nucleus + coda) into a packed 25-bit integer key:
+Mã hóa mọi rime tiếng Việt hợp lệ (nucleus + coda) thành khóa integer 25-bit:
 
 ```
 key = (charIndex(a) << 10) | (charIndex(b) << 5) | charIndex(c)
 ```
 
-Values encode:
-- **tone position** — which character in the nucleus carries the diacritic
-- **coda fold target** — maps typed coda character to its canonical form (e.g. `c` → `c`, `ch` → `h`)
+Giá trị lưu:
+- **Vị trí dấu** — ký tự nào trong nucleus chịu dấu thanh
+- **Coda fold target** — ánh xạ ký tự coda nhập sang dạng chuẩn (ví dụ `c` → `c`, `ch` → `h`)
 
-Also generates the syllable prefix table at init time:
+Cũng sinh bảng tiền tố âm tiết khi init:
 
 ```
-OnsetMap.ALL_ONSETS × RimeMap.NUCLEI → valid rimes per onset → prefix closure → _sylTable
+OnsetMap.ALL_ONSETS × RimeMap.NUCLEI → rime hợp lệ theo onset → đóng tiền tố → _sylTable
 ```
 
 ### OnsetMap (`OnsetMap.kt`)
 
-Validates Vietnamese onsets in O(1). Same Fibonacci-hash architecture. Handles the `c/k/q` and `g/gh` / `ng/ngh` front/back vowel split rules:
+Kiểm tra onset tiếng Việt O(1). Cùng kiến trúc Fibonacci-hash. Xử lý quy tắc nguyên âm trước/sau cho `c/k/q` và `g/gh` / `ng/ngh`:
 
-| Onset | Allowed nucleus start |
-|-------|-----------------------|
+| Onset | Nguyên âm đầu được phép |
+|-------|------------------------|
 | `c` | a, ă, â, o, ô, ơ, u, ư |
 | `k` | e, ê, i, y |
 | `g` | a, ă, â, o, ô, ơ, u, ư |
 | `gh` | e, ê, i |
 | `ng` | a, ă, â, o, ô, ơ, u, ư |
 | `ngh` | e, ê, i |
-| `qu` | u (packed onset, not q+u) |
-| `gi` | special: nucleus collapses when i-initial |
+| `qu` | u (onset đóng gói, không phải q+u) |
+| `gi` | đặc biệt: nucleus co lại khi bắt đầu bằng i |
 
 ### VietnameseComposer (`VietnameseComposer.kt`)
 
-Single-resegment Telex engine. All syllable segmentation derives from the `resegment()` function.
+Engine Telex phân đoạn lại bằng một hàm duy nhất. Mọi phân tách âm tiết đều bắt nguồn từ `resegment()`.
 
-**Keystroke flow:**
-1. `insertComposingKey()` appends raw character to the session buffer
-2. `resegment()` splits the raw buffer into syllable boundaries
-3. `compileRaw()` renders each syllable via `SyllableState.toDisplayBuffer()`
-4. Display string is pushed to `InputConnection` — one allocation total
+**Luồng phím bấm:**
+1. `insertComposingKey()` thêm ký tự thô vào buffer phiên
+2. `resegment()` tách buffer thô thành các biên âm tiết
+3. `compileRaw()` render từng âm tiết qua `SyllableState.toDisplayBuffer()`
+4. Chuỗi hiển thị được đẩy tới `InputConnection` — đúng 1 lần cấp phát
 
-**Tone handling:**
-- Tone key (`s`/`f`/`r`/`x`/`j`) applies to the correct nucleus character based on Vietnamese orthographic rules
-- `determineTonePosition()` resolves tone placement per rime using RimeMap data
-- `qu` onset: tone skips `u` (it belongs to the onset, not nucleus)
-- `gi` onset: tone defers to the nucleus after special collapse rules
+**Xử lý thanh điệu:**
+- Phím thanh (`s`/`f`/`r`/`x`/`j`) áp dụng lên đúng ký tự nucleus theo quy tắc chính tả
+- `determineTonePosition()` xác định vị trí dấu dựa trên dữ liệu RimeMap
+- Onset `qu`: thanh bỏ qua `u` (thuộc onset, không phải nucleus)
+- Onset `gi`: thanh hoãn sau quy tắc co nucleus đặc biệt
 
 ### OwnedBuffer (`OwnedBuffer.kt`)
 
-Reusable `CharArray`-backed `CharSequence` that eliminates per-keystroke allocations:
+Buffer ký tự tái sử dụng, backed by `CharArray`, implements `CharSequence` — loại bỏ cấp phát String mỗi phím bấm:
 
-- `append(Char)` / `append(CharSequence)` — no String intermediate
-- `toStringVal()` — single allocation only when `InputConnection.setComposingText()` demands it
-- Zero-copy comparison via `displayPrefixMatches()` in the cursor tracking path
+- `append(Char)` / `append(CharSequence)` — không tạo String trung gian
+- `toStringVal()` — đúng 1 lần cấp phát khi `InputConnection.setComposingText()` yêu cầu
+- So sánh zero-copy qua `displayPrefixMatches()` trong path theo dõi con trỏ
 
 ### ImeInputConnectionController (`ImeInputConnectionController.kt`)
 
-Bridge between engine and Android IME framework:
+Cầu nối giữa engine và framework IME Android:
 
-- **Cursor tracking** — `displayCursorIndex()` renders raw prefix into buffer and returns length (zero-alloc)
-- **Backspace replay** — `rawIndexOfDisplay()` compares via buffer comparison, no substring + casing per step
-- **Input type detection** — auto-switches to Latin mode for password fields
+- **Theo dõi con trỏ** — `displayCursorIndex()` render tiền tố thô vào buffer, trả về độ dài (zero-alloc)
+- **Xử lý xóa** — `rawIndexOfDisplay()` so sánh qua buffer, không substring + casing từng bước
+- **Phát hiện loại input** — tự chuyển sang Latin cho trường mật khẩu
 
 ### VietnameseUnicode (`VietnameseUnicode.kt`)
 
-Precomposed Vietnamese Unicode handling:
+Xử lý Unicode tiếng Việt đã precompose:
 
-- `applyTone(char, tone)` → NFC-composed character (e.g. `a` + `ACUTE` → `á`)
-- `stripDiacritics(char)` → base ASCII character
-- `normalizeIfNeeded()` → NFC normalization only when combining marks are present
+- `applyTone(char, tone)` → ký tự NFC (ví dụ `a` + `ACUTE` → `á`)
+- `stripDiacritics(char)` → ký tự ASCII gốc
+- `normalizeIfNeeded()` → NFC normalization chỉ khi có dấu kết hợp
 
 ### IntFlatTable (`IntFlatTable.kt`)
 
-Generic open-addressing hash table for `Int → Int` mappings:
+Bảng hash generic `Int → Int` open-addressing:
 
-- Fibonacci-multiply hash function
-- Linear probing with tombstone recycling
-- Powers-of-2 sizing for fast modulo via bit mask
+- Hàm băm Fibonacci-multiply
+- Linear probing với tái sử dụng tombstone
+- Kích thước lũy thừa 2 để chia nhanh bằng bit mask
 
-## Input Modes
+## Chế độ nhập
 
-| Mode | Description |
-|------|-------------|
-| **Vietnamese Telex** | Standard Telex: `a` + `s` → `á`, `d` + `d` → `đ` |
-| **Simple Telex** | Simplified variant |
-| **DirectW** | `w` types literal `w` instead of `ư`/`ư` transformation |
-| **Old Tone Placement** | Vietnamese Ministry of Education 1984 style (tone on last nucleus character) |
+| Chế độ | Mô tả |
+|--------|--------|
+| **Vietnamese Telex** | Telex chuẩn: `a` + `s` → `á`, `d` + `d` → `đ` |
+| **Simple Telex** | Biến thể đơn giản hóa |
+| **DirectW** | `w` gõ ký tự `w` thay vì biến đổi `ư` |
+| **Old Tone Placement** | Quy tắc Bộ Giáo dục 1984 (dấu đặt trên ký tự nucleus cuối) |
 
 ## Build
 
 ```bash
-# Android build
 ./gradlew assembleDebug
-
-# Engine unit tests (standalone Kotlin)
-kotlinc src/engine/*.kt test/*.kt -include-runtime -d test.jar
-java -cp test.jar RunAllKt
 ```
 
-## License
+## Giấy phép
 
-AGPL-3.0 — see [LICENSE](LICENSE). Source must remain open for any deployment, including SaaS. Attribution required.
+AGPL-3.0 — xem [LICENSE](LICENSE). Mã nguồn phải mở cho mọi hình thức triển khai, bao gồm SaaS. Bắt buộc ghi rõ nguồn.
