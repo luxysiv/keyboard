@@ -30,19 +30,19 @@ object RimeMap {
     // (verified against the 17,974-syllable corpus; NOT the full Cartesian product).
     //   c/ch/p/t = stop codas → only acute/dot (sắc/nặng) tones
     //   m/n/ng/nh = nasal codas → 6 tones
-    val C_ALL   = arrayOf("c","ch","p","t","m","n","ng","nh") // a, ê, oa
+    val C_ALL   = arrayOf("c","ch","p","t","m","n","ng","nh") // Full coda set
     val C_SHORT = arrayOf("c","p","t","m","n","ng")           // ă, â, o, ô, u, uô, ươ, iê, uo, ie
     val C_I     = arrayOf("ch","p","t","m","n","nh")          // i (no c, no ng)
     val C_O5    = arrayOf("p","t","m","n")                    // ơ (no c, no ng)
     val C_U8    = arrayOf("c","m","n","ng","t")               // ư (no p)
     val C_Y     = arrayOf("p","t","ch","n","nh")              // y
     val C_OE    = arrayOf("m","n","p","t")                        // oe
-    val C_OA5   = arrayOf("c","m","n","ng","p","t")               // oă (no p)
+    val C_OA5   = arrayOf("c","m","n","ng","p","t")               // oă coda set
     val C_UE    = arrayOf("ch","n","nh","t")                          // ue, uê
     val C_UA4   = arrayOf("c","n","ng","t")                       // uâ
     val C_UA    = arrayOf("n","ng","t")                            // ua
     val C_UY2   = arrayOf("p","t","ch","n","nh")              // uy
-    val C_OO    = arrayOf("c","ng")                           // oo (coong, xoóc)
+    val C_OO    = arrayOf("c","ng")                           // oo open rime set
     val C_UYE   = arrayOf("n","t")                            // uye/uyê
     val C_TMNG  = arrayOf("t","m","n","ng")                   // ye/yê (pre-fold raw)
     val C_NONE  = emptyArray<String>()
@@ -163,8 +163,10 @@ object RimeMap {
     //   bits 8-10: secondary position (compound folds)
     //   bits 11-15: secondary replacement char index (31 = none)
 
-    /** Initialize the flat map.  Called once at class load time. */
-    init { build() }
+    /** Initialize the flat map and syllable prefix table.  Called once at class load time. */
+    init { build()
+        generateSyllableTable()
+    }
 
     /** Canonical raw keystroke for nuclei where naive char-by-char is wrong.
      *  (w-compound: the w serves double duty — u+w→ư, then the following
@@ -787,7 +789,7 @@ object RimeMap {
     // ── Syllable prefix table (auto-generated from 18342 syllables) ──────
     // Single source of truth for display-prefix
     // validation (e.g. qu+ư invalid, onset+rime must be a prefix of a real syllable).
-    private val _sylTable = LongArray(TABLE_SIZE)
+    private lateinit var _sylTable: LongArray
 
     private fun sylPackKey(s: String): Long {
         if (s.isEmpty() || s.length > 10) return -1L
@@ -881,12 +883,19 @@ object RimeMap {
 
     /** Generate syllable prefix table from onset rules + _nuclei/codas. */
     private fun generateSyllableTable() {
+        _sylTable = LongArray(TABLE_SIZE)
         val onsets = arrayOf(
             "ngh", "ng", "nh", "th", "tr", "ch", "ph", "kh", "gh", "gi", "qu",
             "b", "c", "d", "đ", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x"
         )
-        // Insert bare onsets
-        for (onset in onsets) sylInsert(sylPackKey(onset))
+        // Insert bare onsets + auto-generate partial onset prefixes
+        // e.g. "qu" generates "q", "ngh" generates "n", "ng", etc.
+        for (onset in onsets) {
+            sylInsert(sylPackKey(onset))
+            for (len in 1 until onset.length) {
+                sylInsert(sylPackKey(onset.substring(0, len)))
+            }
+        }
         // Insert bare vowels
         for (spec in _nuclei) sylInsert(sylPackKey(spec.nucleus))
         // Generate onset + nucleus + (optional coda) combinations
@@ -911,11 +920,6 @@ object RimeMap {
                 }
             }
         }
-    }
-
-    // ── Syllable prefix init ──────────────────────────────────
-    init {
-        generateSyllableTable()
     }
 
 }

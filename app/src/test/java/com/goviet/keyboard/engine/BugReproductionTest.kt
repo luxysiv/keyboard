@@ -216,4 +216,40 @@ class BugReproductionTest {
         assertEquals("tư", engine.process("tw"))
     }
 
+    @Test
+    fun testGisA_shouldBe_gia() {
+        // g i s → gí, then 'a' must extend the nucleus to giá (tone on rime 'a')
+        assertEquals("giá", engine.process("gisa"))
+        assertEquals("già", engine.process("gifa"))
+        assertEquals("giả", engine.process("gira"))
+        assertEquals("giã", engine.process("gixa"))
+        assertEquals("giạ", engine.process("gija"))
+    }
+
+    @Test
+    fun testGii_locksSyllable() {
+        // gi onset already contains 'i'; a second 'i' cannot be a new nucleus,
+        // so the rest of the raw stays literal (gii, giienges)
+        assertEquals("gii", engine.process("gii"))
+        assertEquals("giie", engine.process("giie"))
+        assertEquals("giieng", engine.process("giieng"))
+        assertEquals("giienges", engine.process("giienges"))
+    }
+
+    @Test
+    fun testQuToneBeforeVowel() {
+        // qu onset ends with 'u' → deferred tone applies to the rime vowel
+        assertEquals("quá", engine.process("qusa"))
+        assertEquals("quà", engine.process("qufa"))
+        assertEquals("quu", engine.process("quu"))
+    }
+
+    @Test
+    fun testToneKeyWithoutVowelStaysLiteral() {
+        // plain onsets have no vowel to anchor the tone → tone key stays literal
+        assertEquals("dsa", engine.process("dsa"))
+        assertEquals("dxa", engine.process("dxa"))
+        assertEquals("tja", engine.process("tja"))
+    }
+
 }

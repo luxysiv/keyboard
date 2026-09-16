@@ -262,7 +262,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var lastToneKey: Char = '\u0000',
         var syllableLocked: Boolean = false, // once a char is rejected the rest is literal
         var justUntoggled: Boolean = false,  // prevents immediate re-fold after untoggle
-        var fold: FoldAnchor = FoldAnchor()  // last nucleus fold (untoggle anchor)
+        var fold: FoldAnchor = FoldAnchor(), // last nucleus fold (untoggle anchor)
+        var pendingTone: Tone = Tone.NONE,   // deferred tone applied when nucleus appears
+        var pendingToneKey: Char = '\u0000' // key that produced the pending tone
     )
 
     /**
@@ -408,6 +410,26 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
             return
         }
+        // Nucleus empty but onset ends with a vowel ('gi', 'qu'): defer tone
+        // for the later rime vowel.  Plain consonant onsets (d, b...) have no
+        // vowel to anchor the tone, so the key stays literal (dsa → dsa).
+        if (out.nucleus.isEmpty() && out.onset.isNotEmpty() &&
+            RimeMap.isBaseVowel(out.onset[out.onset.length - 1])) {
+            if (targetTone != null && targetTone != Tone.NONE) {
+                // Defer tone — cancel if same key pressed twice
+                if (ctx.pendingTone != Tone.NONE && cLow == ctx.pendingToneKey) {
+                    ctx.pendingTone = Tone.NONE; ctx.pendingToneKey = '\u0000'
+                } else {
+                    ctx.pendingTone = targetTone; ctx.pendingToneKey = cLow
+                }
+                return
+            }
+            // 'z' (clear) clears pending tone
+            if (targetTone == Tone.NONE && ctx.pendingTone != Tone.NONE) {
+                ctx.pendingTone = Tone.NONE; ctx.pendingToneKey = '\u0000'
+                return
+            }
+        }
         lockLiteral(out, ctx, c)
     }
 
@@ -443,6 +465,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 ctx.nucKey = RimeMap.rimeKey(out.nucleus)
                 ctx.rimeKey = ctx.nucKey
                 ctx.fold.set('w', 0, pos, standalone = true)
+                applyPendingTone(out, ctx)
                 return pos + 1
             }
         }
@@ -507,10 +530,19 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         if (!ctx.syllableLocked && out.coda.isEmpty()) {
             val candidateKey = RimeMap.extendKeySingle(ctx.nucKey, c)
             if (RimeMap.isValidPrefix(candidateKey)) {
+                // Reject nucleus that makes invalid syllable prefix
+                if (out.nucleus.isEmpty() && out.onset.isNotEmpty()) {
+                    val candidate = (out.onset + c).lowercase()
+                    if (!RimeMap.isSyllableDisplayPrefixValid(candidate)) {
+                        lockLiteral(out, ctx, c)
+                        return pos + 1
+                    }
+                }
                 out.nucleus += c
                 ctx.nucKey = candidateKey
                 ctx.rimeKey = ctx.nucKey
                 ctx.fold.clear()
+                applyPendingTone(out, ctx)
                 return pos + 1
             }
         }
@@ -522,10 +554,19 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     /** Plain vowel → start a nucleus or extend it; false falls through to literal. */
     private fun tryPlainVowel(c: Char, out: SyllableState, ctx: ScanCtx): Boolean {
         if (out.nucleus.isEmpty()) {
+            // Reject nucleus that makes invalid syllable prefix (e.g. "gii", "quu")
+            // Caller's literal fallback appends the char once and locks.
+            if (out.onset.isNotEmpty()) {
+                val candidate = (out.onset + c).lowercase()
+                if (!RimeMap.isSyllableDisplayPrefixValid(candidate)) {
+                    return false
+                }
+            }
             out.nucleus = c.toString()
             ctx.nucKey = RimeMap.rimeKey(out.nucleus)
             ctx.rimeKey = ctx.nucKey
             ctx.justUntoggled = false
+            applyPendingTone(out, ctx)
             return true
         }
         if (out.coda.isEmpty()) {
@@ -963,6 +1004,19 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         if (raw.isEmpty()) return ""
         compileRaw(raw, true, stringOut)
         return stringOut.toStringVal()
+    }
+
+    /** Apply deferred tone (from handleToneKey) to the current nucleus. */
+    private fun applyPendingTone(out: SyllableState, ctx: ScanCtx) {
+        if (ctx.pendingTone != Tone.NONE) {
+            val rk = RimeMap.keyCat(out.nucleus, out.nucleus.length, out.coda, out.coda.length)
+            if (RimeMap.isRimeKeyValidForTone(rk, ctx.pendingTone)) {
+                out.tone = ctx.pendingTone
+                ctx.lastToneKey = ctx.pendingToneKey
+            }
+            ctx.pendingTone = Tone.NONE
+            ctx.pendingToneKey = '\u0000'
+        }
     }
 
     // ================================================================
