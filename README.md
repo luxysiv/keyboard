@@ -1,27 +1,14 @@
 # GoViet — Bàn phím tiếng Việt Telex
 
-## Luồng gõ
+## Giới thiệu
 
-```
- KeyEvent → Composer → OwnedBuffer → setComposingText
-              │
-              ▼
-          resegment()
-         ┌────┴────┐
-      matchOnset   scanBody     → toDisplay
-      (longest     (gõ từng     (suy ra ký
-       prefix)     phím theo    tự hiển thị
-                   nhóm)        từ buffer thô)
-```
+Bàn phím làm dựa trên ý tưởng của mình, AI thực hiện code
 
-## Fold Telex
+Engine bởi Big Pickle
 
-```
- a+a → ă    a+w → ă    e+e → ê    o+o → ô
- o+w → ơ    u+w → ư    w          → ư (directW tắt)
-```
+Layout bởi Gemini
 
-Gõ lại cùng phím = untoggle (a+a+a → aa).
+Góp ý về bug bởi GPT, Claude
 
 ## Build
 
@@ -31,4 +18,4 @@ Gõ lại cùng phím = untoggle (a+a+a → aa).
 
 ## Giấy phép
 
-AGPL-3.0 — [LICENSE](LICENSE). Bắt buộc ghi rõ nguồn.
+AGPL-3.0 — [LICENSE](LICENSE).
