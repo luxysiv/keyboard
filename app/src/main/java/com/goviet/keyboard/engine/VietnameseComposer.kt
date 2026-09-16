@@ -127,6 +127,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private val processRaw = StringBuilder()
     private val processState = SyllableState()
     private val syllableRenderBuf = OwnedBuffer()
+    private val adoptStripBuf = OwnedBuffer()
 
     fun reset() {
         replayState.reset()
@@ -193,26 +194,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             } else break
         }
         return if (tailStart >= 0) raw.subSequence(tailStart, tailEnd).toString() else ""
-    }
-
-    private fun predictConsonantTailRange(raw: CharSequence, from: Int): Int {
-        var i = from
-        while (i < raw.length) {
-            val c = raw[i].lowercaseChar()
-            if (isToneKey(c)) { i++; continue }
-            if (RimeMap.isFoldKey(c)) { i++; continue }
-            if (OnsetMap.isConsonant(c)) { i++ } else break
-        }
-        return i
-    }
-
-    private fun predictVowelTailRange(raw: CharSequence, from: Int): Int {
-        var i = from
-        while (i < raw.length) {
-            val c = raw[i].lowercaseChar()
-            if (RimeMap.isBaseVowel(c)) i++ else break
-        }
-        return i
     }
 
     /**
@@ -673,22 +654,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             val newNuc = RimeMap.applyFold(nuc, primary)
             var ok = isValidRime(newNuc, out.coda)
             if (!ok && RimeMap.foldWPrimaryLookahead(slot)) {
-                val tailEnd = predictConsonantTailRange(raw, rawPos + 1)
-                if (tailEnd > rawPos + 1) {
-                    ok = RimeMap.isValidRimeWithTail(
-                        newNuc, newNuc.length,
-                        raw, rawPos + 1, tailEnd,
-                        out.coda
-                    )
-                }
+                val tail = predictConsonantTail(raw, rawPos + 1)
+                if (tail.isNotEmpty()) ok = isValidRime(newNuc, out.coda + tail)
             }
             if (!ok) return -1
             out.nucleus = newNuc
             return RimeMap.foldPos(primary)
         }
 
-        val tailEnd = predictConsonantTailRange(raw, rawPos + 1)
-        val hasTail = tailEnd > rawPos + 1
+        val tail = predictConsonantTail(raw, rawPos + 1)
         val primNuc = RimeMap.applyFold(nuc, primary)
         val altNuc = RimeMap.applyFold(nuc, alt)
 
@@ -697,10 +671,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             val av = isValidRime(altNuc, coda)
             if (pv != av) return if (pv) primNuc else altNuc
             if (!pv) return null
-            val vtEnd = predictVowelTailRange(raw, rawPos + 1)
-            if (vtEnd > rawPos + 1) {
-                val primKey = RimeMap.keyCat(primNuc, primNuc.length, raw, rawPos + 1, vtEnd)
-                val altKey = RimeMap.keyCat(altNuc, altNuc.length, raw, rawPos + 1, vtEnd)
+            val vt = predictVowelTail(raw, rawPos + 1)
+            if (vt.isNotEmpty()) {
+                val primKey = RimeMap.keyCat(primNuc, primNuc.length, vt, vt.length)
+                val altKey = RimeMap.keyCat(altNuc, altNuc.length, vt, vt.length)
                 val pe = RimeMap.isValidPrefix(RimeMap.extendKey(primKey, out.coda, 0, out.coda.length))
                 val ae = RimeMap.isValidPrefix(RimeMap.extendKey(altKey, out.coda, 0, out.coda.length))
                 if (pe != ae) return if (pe) primNuc else altNuc
@@ -709,9 +683,9 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             return if (out.coda.isNotEmpty() || !openUoOk) primNuc else altNuc
         }
 
-        val candCoda = if (hasTail) out.coda + raw.subSequence(rawPos + 1, tailEnd).toString() else out.coda
+        val candCoda = out.coda + tail
         var chosen = pickVariant(candCoda)
-        if (chosen == null && hasTail) {
+        if (chosen == null && tail.isNotEmpty()) {
             chosen = pickVariant(out.coda)
         }
         if (chosen == null) return -1

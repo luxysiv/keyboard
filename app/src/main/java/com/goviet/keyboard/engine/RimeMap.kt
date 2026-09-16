@@ -389,28 +389,9 @@ object RimeMap {
         return ((baseLen + extLen) shl 25) or chars
     }
 
-    /**
-     * Zero-alloc rime validity: packs [base] + [ext] range from [extSrc] +
-     * [coda] into one key and checks the flat table.  Callers pass an
-     * already-bounded [ext] range so no String is ever built for lookahead.
-     */
-    fun isValidRimeWithTail(
-        base: CharSequence, baseLen: Int,
-        extSrc: CharSequence, extStart: Int, extEnd: Int,
-        coda: CharSequence
-    ): Boolean {
-        var chars = 0
-        var i = 0
-        while (i < baseLen) { chars = (chars shl 5) or charIndex(base[i]); i++ }
-        i = extStart
-        while (i < extEnd) { chars = (chars shl 5) or charIndex(extSrc[i]); i++ }
-        i = 0
-        val codaLen = coda.length
-        while (i < codaLen) { chars = (chars shl 5) or charIndex(coda[i]); i++ }
-        return isValidPrefix((baseLen + (extEnd - extStart) + codaLen) shl 25 or chars)
-    }
 
-    private const val NO_FOLD_CHAR = 31
+
+        private const val NO_FOLD_CHAR = 31
     private val CHAR_AT = RIME_ALPHA.toCharArray()
 
     /** Pack a single-char fold replacement at [pos1]. */
@@ -653,6 +634,11 @@ object RimeMap {
     fun isRimeValidForTone(rime: String, tone: Tone): Boolean {
         if (rime.isEmpty()) return false
         return isValidPrefixWithTone(rimeKey(rime), tone.index)
+    }
+
+    fun isRimeValidForTone(rime: CharSequence, start: Int, length: Int, tone: Tone): Boolean {
+        if (length <= 0) return false
+        return isValidPrefixWithTone(rimeKey(rime, start, length), tone.index)
     }
 
     /** Validate that a rime (by precomputed flat-table key) is valid for a specific tone. */
