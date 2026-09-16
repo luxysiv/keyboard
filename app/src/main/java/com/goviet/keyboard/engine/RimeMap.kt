@@ -270,8 +270,7 @@ object RimeMap {
      */
     @JvmStatic
     fun combineNucleus(nucleus: String, char: Char): String? {
-        val nLower = nucleus.lowercase()
-        val compositeKey = keyCat(nLower, nLower.length, char)
+        val compositeKey = keyCat(nucleus, nucleus.length, char)
         var slot = (compositeKey * -0x61c88647).toInt() and COMB_MASK
         while (true) {
             if (_combineKeys[slot] == compositeKey) {
@@ -753,6 +752,42 @@ object RimeMap {
         val ascii = sylStripDiacritics(display)
         if (ascii.isEmpty()) return true
         return isSyllablePrefixValid(ascii)
+    }
+
+    /** Zero-alloc check that [onset] plus one key is a valid display prefix. */
+    @JvmStatic
+    fun isSyllableDisplayPrefixValid(onset: CharSequence, c: Char): Boolean {
+        val total = onset.length + 1
+        if (total > 10) return false
+        var key = total.toLong() shl 55
+        for (i in 0 until onset.length) {
+            val idx = sylAsciiIndex(onset[i])
+            if (idx < 0) return isSyllableDisplayPrefixValid(onset.toString() + c)
+            key = key or (idx.toLong() shl (50 - 5 * i))
+        }
+        val idx = sylAsciiIndex(c)
+        if (idx < 0) return isSyllableDisplayPrefixValid(onset.toString() + c)
+        key = key or (idx.toLong() shl (50 - 5 * (total - 1)))
+        var slot = sylHash(key)
+        while (true) {
+            if (_sylTable[slot] == key) return true
+            if (_sylTable[slot] == 0L) return false
+            slot = (slot + 1) and TABLE_MASK
+        }
+    }
+
+    private fun sylAsciiIndex(c: Char): Int {
+        val lower = c.lowercaseChar()
+        val idx = when (lower) {
+            'ă', 'â' -> 'a'
+            'ê' -> 'e'
+            'ô', 'ơ' -> 'o'
+            'ư' -> 'u'
+            'đ' -> 'd'
+            else -> lower
+        }
+        val code = idx.code - 'a'.code
+        return if (code in 0 until 26) code else -1
     }
 
     /**

@@ -541,14 +541,16 @@ class ImeInputConnectionController(
             val compiled = explicitCompiled ?: compileComposingText()
             if (isImmediateCommitMode()) {
                 val lastStr = lastSetComposingText ?: ""
-                if (lastStr.isNotEmpty() && compiled == lastStr.substring(0, lastStr.length - 1)) {
+                if (lastStr.isNotEmpty() && compiled.length == lastStr.length - 1 && lastStr.startsWith(compiled)) {
                     backspaceHandler.sendBackspaceEvents(ic, 1)
                 } else if (lastLenIfImmediate > 0) {
                     backspaceHandler.sendBackspaceEvents(ic, lastLenIfImmediate)
                 }
                 ic.commitText(compiled, 1)
             } else {
-                ic.setComposingText(compiled, 1)
+                if (compiled != lastSetComposingText) {
+                    ic.setComposingText(compiled, 1)
+                }
             }
             if (composingStartInEditor >= 0) {
                 if (composingCursorIndex != inputEngine.composingRawLength()) {
@@ -764,8 +766,8 @@ class ImeInputConnectionController(
      */
     fun compileRawDisplay(): String {
         if (!inputEngine.isComposing()) return ""
-        return VietnameseUnicode.applyCasingFromRaw(
-            inputEngine.toDisplayString(), inputEngine.composingRaw().toString())
+        inputEngine.toDisplayBuffer(displayBuf)
+        return VietnameseUnicode.applyCasingFromRaw(displayBuf, inputEngine.composingRaw())
     }
 
     /**
@@ -777,7 +779,7 @@ class ImeInputConnectionController(
         if (end <= 0) return ""
         if (end >= raw.length) return compileRawDisplay()
         inputEngine.compileRaw(raw, inputEngine.composeAsVietnamese, displayBuf, end)
-        return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), raw.subSequence(0, end).toString())
+        return VietnameseUnicode.applyCasingFromRaw(displayBuf, raw.subSequence(0, end))
     }
 
     /** Display caret offset (chars) for the current raw caret. */
@@ -808,7 +810,7 @@ class ImeInputConnectionController(
     fun compileText(raw: String): String {
         if (raw.isEmpty()) return ""
         inputEngine.compileRaw(raw, vietnamese = true, displayBuf)
-        return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), raw)
+        return VietnameseUnicode.applyCasingFromRaw(displayBuf, raw)
     }
 
     private fun tryExpandMacro(raw: String, wordBreak: String): String? {

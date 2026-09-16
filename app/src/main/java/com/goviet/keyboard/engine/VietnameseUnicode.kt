@@ -125,12 +125,14 @@ object VietnameseUnicode {
         return stripDiacritics(stripTone(c)).lowercaseChar()
     }
 
-    fun applyCasingFromRaw(compiled: String, raw: String): String {
-        if (compiled.isEmpty() || raw.isEmpty()) return normalizeNfc(compiled)
+    fun applyCasingFromRaw(compiled: CharSequence, raw: CharSequence): String {
+        val compiledLen = compiled.length
+        val rawLen = raw.length
+        if (rawLen == 0) return compiled.toString()
+        if (compiledLen == 0) return ""
 
         var hasUpperInRaw = false
         var isAllUpper = true
-        val rawLen = raw.length
         for (i in 0 until rawLen) {
             val c = raw[i]
             val isLtr = c in 'a'..'z' || c in 'A'..'Z' || c.lowercaseChar() != c.uppercaseChar()
@@ -143,7 +145,6 @@ object VietnameseUnicode {
             }
         }
 
-        val compiledLen = compiled.length
         val buf = ensureBuffer(compiledLen)
         var offset = 0
 
@@ -151,14 +152,14 @@ object VietnameseUnicode {
             for (i in 0 until compiledLen) {
                 buf[offset++] = compiled[i].lowercaseChar()
             }
-            return normalizeNfc(String(buf, 0, offset))
+            return normalizeIfNeeded(buf, offset)
         }
 
         if (isAllUpper) {
             for (i in 0 until compiledLen) {
                 buf[offset++] = compiled[i].uppercaseChar()
             }
-            return normalizeNfc(String(buf, 0, offset))
+            return normalizeIfNeeded(buf, offset)
         }
 
         val isFirstUpper = raw[0].isUpperCase()
@@ -198,6 +199,22 @@ object VietnameseUnicode {
                 }
             }
         }
-        return normalizeNfc(String(buf, 0, offset))
+        return normalizeIfNeeded(buf, offset)
+    }
+
+    fun applyCasingFromRaw(compiled: String, raw: String): String =
+        applyCasingFromRaw(compiled as CharSequence, raw as CharSequence)
+
+    private fun normalizeIfNeeded(buf: CharArray, len: Int): String {
+        var needNfc = false
+        for (i in 0 until len) {
+            val c = buf[i].code
+            if (c in 0x300..0x36F || c in 0x1AB0..0x1AFF || c in 0x20D0..0x20FF) {
+                needNfc = true
+                break
+            }
+        }
+        val s = String(buf, 0, len)
+        return if (needNfc) java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFC) else s
     }
 }

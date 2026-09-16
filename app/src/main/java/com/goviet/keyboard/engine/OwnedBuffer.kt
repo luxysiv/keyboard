@@ -12,7 +12,7 @@ package com.goviet.keyboard.engine
  *
  * Thread-confined: NOT thread-safe. Each IME thread owns its buffer.
  */
-class OwnedBuffer {
+class OwnedBuffer : CharSequence {
     var chars = CharArray(64)
         private set
     var len = 0
@@ -68,7 +68,12 @@ class OwnedBuffer {
         if (newLen in 0..len) len = newLen
     }
 
-    fun charAt(index: Int): Char = chars[index]
+    override val length: Int get() = len
+
+    override operator fun get(index: Int): Char = chars[index]
+
+    override fun subSequence(startIndex: Int, endIndex: Int): CharSequence =
+        String(chars, startIndex, endIndex - startIndex)
 
     /** Produce a String ONLY when required by the InputConnection API. */
     fun toStringVal(): String = String(chars, 0, len)

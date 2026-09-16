@@ -140,6 +140,11 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     fun toDisplayString(): String =
         processState.toDisplayString(options.oldTonePlacement)
 
+    /** Render the current interactive state into [out] without allocating a String. */
+    fun toDisplayBuffer(out: OwnedBuffer) {
+        processState.toDisplayBuffer(out, options.oldTonePlacement)
+    }
+
     /**
      * Generate deconstructed snapshots: adopt [word], replay keystroke by keystroke,
      * return (canonicalRaw, snapshots).
@@ -423,7 +428,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             (out.onset.isEmpty() || out.onset[0].lowercaseChar() != 'w')) {
             val wChar = if (c.isUpperCase()) 'Ư' else 'ư'
             val comboOk = out.onset.isEmpty() ||
-                RimeMap.isSyllableDisplayPrefixValid((out.onset + wChar).lowercase())
+                RimeMap.isSyllableDisplayPrefixValid(out.onset, wChar)
             if (comboOk) {
                 out.nucleus = wChar.toString()
                 ctx.nucKey = RimeMap.rimeKey(out.nucleus)
@@ -489,8 +494,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             val candidateKey = RimeMap.extendKeySingle(ctx.nucKey, c)
             if (RimeMap.isValidPrefix(candidateKey)) {
                 if (out.nucleus.isEmpty() && out.onset.isNotEmpty()) {
-                    val candidate = (out.onset + c).lowercase()
-                    if (!RimeMap.isSyllableDisplayPrefixValid(candidate)) {
+                    if (!RimeMap.isSyllableDisplayPrefixValid(out.onset, c)) {
                         lockLiteral(out, ctx, c)
                         return pos + 1
                     }
@@ -512,8 +516,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun tryPlainVowel(c: Char, out: SyllableState, ctx: ScanCtx): Boolean {
         if (out.nucleus.isEmpty()) {
             if (out.onset.isNotEmpty()) {
-                val candidate = (out.onset + c).lowercase()
-                if (!RimeMap.isSyllableDisplayPrefixValid(candidate)) {
+                if (!RimeMap.isSyllableDisplayPrefixValid(out.onset, c)) {
                     return false
                 }
             }
