@@ -21,7 +21,7 @@
  o+w → ơ    u+w → ư    w          → ư (directW tắt)
 ```
 
-Gõ lại cùng phím = untoggle (a+a+a → a).
+Gõ lại cùng phím = untoggle (a+a+a → aa).
 
 ## Build
 
