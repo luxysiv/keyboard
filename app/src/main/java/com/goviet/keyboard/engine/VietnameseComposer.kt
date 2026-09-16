@@ -126,6 +126,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     /** Test API: internal buffer + state for processKey. */
     private val processRaw = StringBuilder()
     private val processState = SyllableState()
+    private val syllableRenderBuf = OwnedBuffer()
 
     fun reset() {
         replayState.reset()
@@ -712,7 +713,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     /** Inserts one Telex key at [index] of the composing raw and resegments. */
     fun insertComposingKey(index: Int, key: Char) {
-        processRaw.insert(index, key)
+        if (index >= processRaw.length) processRaw.append(key) else processRaw.insert(index, key)
         if (composeAsVietnamese) {
             resegment(processRaw, processState)
         } else {
@@ -772,7 +773,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             while (i < rawLen && !isBoundaryKey(raw[i])) i++
             val syllable = raw.subSequence(start, i)
             resegment(syllable, replayState)
-            out.append(replayState.toDisplayString(options.oldTonePlacement))
+            replayState.toDisplayBuffer(syllableRenderBuf, options.oldTonePlacement)
+            out.append(syllableRenderBuf)
         }
         replayState.reset()
     }
