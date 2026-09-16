@@ -119,7 +119,7 @@ class ShiftStateController(
             _state.value = 0
             0L
         } else if (now - lastShiftTime < doubleTapTimeoutMs) {
-            _state.value = 2 // Caps Lock
+            _state.value = 2
             0L
         } else {
             _state.value = if (_state.value == 0) 1 else 0

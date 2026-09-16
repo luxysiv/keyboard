@@ -90,5 +90,3 @@ class OwnedBuffer {
         chars = grown
     }
 }
-
-// Extension-free overload to append another OwnedBuffer

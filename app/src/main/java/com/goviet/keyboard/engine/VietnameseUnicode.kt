@@ -6,10 +6,6 @@ package com.goviet.keyboard.engine
  */
 object VietnameseUnicode {
 
-    // ── Tone tables ────────────────────────────────────────────────
-    // One row per base vowel, in tone order NONE, ACUTE, GRAVE, HOOK,
-    // TILDE, DOT (aligned with Tone.index).  Every Vietnamese toned vowel
-    // is below U+1F00, so a 0x2000-entry table covers all of them.
     private val TONE_ROWS = arrayOf(
         "aáàảãạ", "ăắằẳẵặ", "âấầẩẫậ",
         "eéèẻẽẹ", "êếềểễệ", "iíìỉĩị",
@@ -108,11 +104,6 @@ object VietnameseUnicode {
         }
         return if (changed) String(chars) else word
     }
-
-
-    // ==========================================
-    // CASING & NFC UTILITIES (merged from VietnameseCharUtils)
-    // ==========================================
 
     private val caseBuffer = ThreadLocal.withInitial { CharArray(32) }
 

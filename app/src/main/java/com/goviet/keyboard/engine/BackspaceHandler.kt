@@ -3,9 +3,6 @@ package com.goviet.keyboard.engine
 import android.view.KeyEvent
 import android.view.inputmethod.InputConnection
 
-// ============================================================
-// WORD AT CURSOR
-// ============================================================
 data class WordAtCursor(
     val text: String,
     val startInEditor: Int,
@@ -13,9 +10,6 @@ data class WordAtCursor(
     val cursorOffset: Int
 )
 
-// ============================================================
-// EDITED VIETNAMESE RECOGNIZER — canonical rime-table based
-// ============================================================
 object EditedVietnameseRecognizer {
 
     /**
@@ -28,34 +22,22 @@ object EditedVietnameseRecognizer {
     fun canRecompose(word: String): Boolean {
         if (word.isEmpty()) return false
         val lower = word.lowercase()
-        // Strip tone diacritics only — base letters (ê, â, ư, ...) are kept
-        // as-is so the remaining rime matches the canonical table.
         val stripped = VietnameseUnicode.stripToneFromWord(lower)
         if (stripped.isEmpty()) return false
 
-        // Longest valid onset wins — single source: OnsetMap.longestOnsetPrefix.
         val onsetLen = OnsetMap.longestOnsetPrefix(stripped)
         val rime = stripped.substring(onsetLen)
         if (rime.isEmpty()) return false
 
-        // The rime must be a (possibly partial) canonical Vietnamese rime
-        // and must contain at least one base vowel.
         if (!RimeMap.isValidPrefix(RimeMap.rimeKey(rime))) return false
         return rime.any { RimeMap.isBaseVowel(it) }
     }
 
 }
 
-// ============================================================
-// BACKSPACE HANDLER (deletion operations)
-// ============================================================
 class BackspaceHandler(
     private val controller: ImeInputConnectionController
 ) {
-
-    // ============================================================
-    // ENTRY POINTS
-    // ============================================================
 
     fun handleBackspace(ic: InputConnection) {
         ic.beginBatchEdit()
@@ -81,11 +63,6 @@ class BackspaceHandler(
                 return
             }
 
-            // If the caret sits inside a Vietnamese word, adopt the prefix before
-            // the caret as the preedit first (underline from the whitespace up to
-            // the caret) so backspace deletes a complete letter inside the preedit.
-            // This keeps the behavior identical regardless of whether the editor
-            // reported the caret move through onUpdateSelection.
             controller.adoptPrefixAtCaret(ic)
             if (controller.inputEngine.isComposing()) {
                 performComposingBackspace(ic)
@@ -93,8 +70,6 @@ class BackspaceHandler(
                 return
             }
 
-            // Committed text: remove the whole preceding Unicode grapheme
-            // cluster ('á' -> "", 'nguyễn' -> 'nguyễ').
             deleteLastGraphemeOrChar(ic)
             controller.service.evaluateAutoShift()
         } finally {
@@ -133,7 +108,6 @@ class BackspaceHandler(
         try {
             controller.lastExpandedMacro = null
             if (controller.inputEngine.isComposing()) {
-                // Delete the whole preedit (swipe/word-delete), then clear composing UI.
                 val lastLen = controller.lastSetComposingText?.length ?: 0
                 controller.resetComposingUI(ic, lastLen)
                 controller.service.evaluateAutoShift()
@@ -145,10 +119,6 @@ class BackspaceHandler(
             ic.endBatchEdit()
         }
     }
-
-    // ============================================================
-    // COMPOSING EDITS — display-level grapheme edits + re-adoption
-    // ============================================================
 
     /**
      * Backspace while composing — deletes one complete displayed letter
@@ -168,13 +138,10 @@ class BackspaceHandler(
 
         val caretInDisplay = controller.displayCursorIndex()
         if (caretInDisplay <= 0) {
-            // Caret is at the very beginning of the preedit: the backspace must
-            // hit committed text while the preedit itself stays untouched.
             deleteCommittedGraphemeBeforePreedit(ic)
             return
         }
 
-        // Remove the whole grapheme cluster immediately before the caret.
         val clusterStart = GraphemeEditor.previousBoundary(display, caretInDisplay)
         if (clusterStart >= caretInDisplay) {
             deleteLastGraphemeOrChar(ic)
@@ -199,7 +166,6 @@ class BackspaceHandler(
             return
         }
 
-        // Remove the whole grapheme cluster immediately after the caret.
         val clusterEnd = GraphemeEditor.nextBoundary(display, caretInDisplay)
         if (clusterEnd <= caretInDisplay) {
             deleteNextGraphemeOrChar(ic)
@@ -236,8 +202,6 @@ class BackspaceHandler(
             if (caretInDisplay < display.length) {
                 controller.moveCursorTo(ic, controller.composingStartInEditor + caretInDisplay)
             } else {
-                // setComposingText(..., 1) leaves the caret at the end of the preedit;
-                // register it so the editor's reflection is consumed as ours.
                 controller.registerCaretAsOurs(controller.composingStartInEditor + display.length)
             }
         }
@@ -259,11 +223,6 @@ class BackspaceHandler(
         controller.resetComposingUI(ic, lastLen)
     }
 
-
-    // ============================================================
-    // MACRO ROLLBACK
-    // ============================================================
-
     private fun rollbackMacroExpansion(ic: InputConnection): Boolean {
         val macro = controller.lastExpandedMacro ?: return false
         if (System.currentTimeMillis() - macro.timestamp >= 3000) {
@@ -277,17 +236,12 @@ class BackspaceHandler(
         }
         controller.lastExpandedMacro = null
         deleteBefore(ic, macro.expandedText.length)
-        // Replay the macro trigger through the same raw recompiler.
         controller.inputEngine.composeAsVietnamese = true
         controller.inputEngine.setComposingRaw(macro.trigger)
         controller.composingCursorIndex = macro.trigger.length
         replaceComposingText(ic, controller.compileRawDisplay())
         return true
     }
-
-    // ============================================================
-    // COMMITTED EDITOR — grapheme-cluster deletion
-    // ============================================================
 
     /** Delete the whole grapheme cluster before the caret ('á' -> ""). */
     fun deleteLastGraphemeOrChar(ic: InputConnection) {
@@ -347,15 +301,11 @@ class BackspaceHandler(
 
     private fun deleteSelection(ic: InputConnection) {
         if (controller.isImmediateCommitMode()) {
-            sendBackspaceEvents(ic, 1) // KEYCODE_DEL with an active selection deletes it
+            sendBackspaceEvents(ic, 1)
         } else {
             ic.commitText("", 1)
         }
     }
-
-    // ============================================================
-    // PREEDIT RENDERING
-    // ============================================================
 
     fun replaceComposingText(ic: InputConnection, display: String) {
         if (controller.isImmediateCommitMode()) {

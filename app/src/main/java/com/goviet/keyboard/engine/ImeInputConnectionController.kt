@@ -22,7 +22,7 @@ class ImeInputConnectionController(
     private val TAG = "ImeInputConnectionController"
 
     val backspaceHandler = BackspaceHandler(this)
-    
+
     enum class TypingMode {
         VIETNAMESE,
         LATIN
@@ -46,7 +46,7 @@ class ImeInputConnectionController(
             val variation = inputType and android.text.InputType.TYPE_MASK_VARIATION
             if (variation == android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD ||
                 variation == android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD ||
-                variation == 224) { // 224 is TYPE_TEXT_VARIATION_WEB_PASSWORD
+                variation == 224) {
                 typingMode = TypingMode.LATIN
                 return
             }
@@ -112,8 +112,6 @@ class ImeInputConnectionController(
             val now = android.os.SystemClock.uptimeMillis()
             for (i in expectedPositions.indices) {
                 if (expectedPositions[i] == cursor) {
-                    // Reject expectations that have gone stale: a delayed callback no
-                    // longer belongs to the operation that set it.
                     if (now - expectedTimes[i] > expectedCursorTtlMs) {
                         expectedPositions[i] = -1
                         return false
@@ -196,7 +194,6 @@ class ImeInputConnectionController(
      *  end of the preedit). Keeps every caret write registered through the guard. */
     fun registerCaretAsOurs(cursor: Int) = selectionGuard.register(cursor)
 
-    // Cached cursor & selection state pushed by Android OS via onUpdateSelection
     var cachedSelStart: Int = 0
     var cachedSelEnd: Int = 0
     var cachedCandidatesStart: Int = -1
@@ -204,9 +201,6 @@ class ImeInputConnectionController(
 
     var userMovedCursor: Boolean = false
     var userSelectedText: Boolean = false
-
-    // NOTE: the "region WE just wrote" record (used by the delete paths) now lives
-    // in SelectionGuard.markRecentRegion/isRecentRegion — see above.
 
     fun onUpdateSelection(
         oldSelStart: Int, oldSelEnd: Int,
@@ -218,12 +212,6 @@ class ImeInputConnectionController(
         cachedCandidatesStart = candidatesStart
         cachedCandidatesEnd = candidatesEnd
 
-        // Resolve the composing region *before* deciding whether the cursor move is ours.
-        // On the web (WebView/Chrome) the editor can emit spurious onUpdateSelection events
-        // (reflow / autocomplete) whose cursor value coincides with a position we set earlier.
-        // Consuming those blindly makes the IME treat a real user cursor move as its own and
-        // jump the caret, so only swallow positions that actually fall inside the active
-        // composing region for the current syllable.
         val lastDisplay = if (!inputEngine.isComposing()) null else (lastSetComposingText ?: compileComposingText())
         val compStart = if (candidatesStart >= 0) candidatesStart else composingStartInEditor
         val compEnd = if (compStart >= 0 && lastDisplay != null) compStart + lastDisplay.length else -1
@@ -233,23 +221,16 @@ class ImeInputConnectionController(
 
         val isRecentTyping = (System.currentTimeMillis() - lastKeyPressTime < 300)
 
-        // 1. If this update matches one of our recent expected cursor positions OR is a rapid reflection
-        //    of recent typing within the composing region, consume it as our own.
         val isExpected = (insideComposingRegion && selectionGuard.isExpected(newSelStart)) ||
                 (insideComposingRegion && isRecentTyping)
         if (isExpected) {
             userMovedCursor = false
             userSelectedText = false
-            // When the editor drops our composing span (InputFilter / WebView reflow),
-            // re-announce it so the engine's composing region stays in sync with the
-            // client instead of drifting and eventually making the caret jump.
             if (candidatesStart == -1 && inputEngine.isComposing() && lastDisplay != null &&
                 composingStartInEditor >= 0
             ) {
                 val ic = service.currentInputConnection
                 if (ic != null) {
-                    // Re-announce is throttled and registers the caret inside the guard,
-                    // so its reflection is consumed as ours, never as a user move.
                     selectionGuard.maybeReannounce(
                         ic,
                         composingStartInEditor,
@@ -264,13 +245,10 @@ class ImeInputConnectionController(
         userMovedCursor = true
         userSelectedText = (newSelStart != newSelEnd)
 
-        // 2. Synchronize composingStartInEditor if Android OS reports a valid composing region
         if (candidatesStart >= 0) {
             composingStartInEditor = candidatesStart
         }
 
-        // 3. User actively moved cursor or tapped elsewhere while a composing session was active:
-        // Commit the active composition as-is and reset IME state so the next keystroke starts cleanly.
         if (inputEngine.isComposing()) {
             val ic = service.currentInputConnection
             if (ic != null) {
@@ -286,12 +264,7 @@ class ImeInputConnectionController(
             }
         }
 
-        // 4. Tapping into the middle of an existing Vietnamese word starts the
-        // preedit immediately: the underline covers the prefix before the caret
-        // ("tha" in "tha|y") without waiting for a key.
         val ic = service.currentInputConnection
-        // Only a deliberate caret move starts the adoption; our recent keystrokes
-        // or the caret jump right after a space-commit must not underline the word.
         if (ic != null && System.currentTimeMillis() - lastKeyPressTime >= 350L) {
             adoptPrefixAtCaret(ic)
         }
@@ -313,15 +286,11 @@ class ImeInputConnectionController(
         val word = findWordAroundCursor(ic) ?: return
         if (word.text.isEmpty()) return
         val offset = word.cursorOffset
-        // The underlined region always runs from the whitespace before the word up
-        // to the caret ("tha" in "tha|y", the whole word at the end, nothing at 0).
         if (offset <= 0) return
         if (word.startInEditor < 0 || word.endInEditor <= word.startInEditor) return
         if (word.endInEditor - word.startInEditor != word.text.length) return
 
         val prefix = word.text.substring(0, offset)
-        // The whole word must look Vietnamese (e.g. "thay"/"thấy"); foreign words
-        // like "confirm" must never be converted to a Telex preedit.
         if (!EditedVietnameseRecognizer.canRecompose(word.text)) return
         val canonical = inputEngine.adoptRoundTrip(prefix) ?: return
 
@@ -330,10 +299,6 @@ class ImeInputConnectionController(
         inputEngine.setComposingRaw(canonical)
         composingCursorIndex = canonical.length
         lastSetComposingText = prefix
-        // announceRegion registers the caret AND updates the editor in one step, so the
-        // reflection of our own setComposingRegion is consumed as ours instead of being
-        // mistaken for a user move (which would commit/clear and re-adopt, flickering
-        // the underline forever).
         selectionGuard.announceRegion(
             ic, word.startInEditor, word.startInEditor + prefix.length, word.startInEditor + offset
         )
@@ -342,7 +307,6 @@ class ImeInputConnectionController(
 
     data class MacroExpansionRecord(val trigger: String, val expandedText: String, val timestamp: Long)
     var lastExpandedMacro: MacroExpansionRecord? = null
-
 
     private fun recordImeCommit(word: String) {
         val trimmed = word.trim()
@@ -399,16 +363,11 @@ class ImeInputConnectionController(
     /** True caret selection, race-free — used by the delete paths. */
     fun hasRealSelection(ic: InputConnection): Boolean {
         if (isSelecting) return true
-        // A selection reported by onUpdateSelection is editor-acknowledged and
-        // always a genuine user gesture — trust it directly.
         if (userSelectedText) return true
         val extracted = queryExtractedText(ic)
         val selStart = extracted?.selectionStart ?: cachedSelStart
         val selEnd = extracted?.selectionEnd ?: cachedSelEnd
         if (selStart < 0 || selEnd < 0 || selStart == selEnd) return false
-        // Exclude the composing/just-committed span we wrote ourselves: to the
-        // engine that is a caret, never a selection ('rồng ' -> BACKSPACE must
-        // remove the space, not the whole word).
         if (selectionGuard.isRecentRegion(selStart, selEnd)) return false
         return true
     }
@@ -462,10 +421,6 @@ class ImeInputConnectionController(
 
         val isAtEnd = wordAtCursor != null && wordCursorOffset == wordTextLength
 
-        // Middle-of-word edits adopt only the prefix before the caret: the underline
-        // covers the typed part ("tha" in "tha|y"), the rest of the word stays
-        // committed outside the region, and the caret keeps its exact position instead
-        // of jumping to the end of the word.
         val adoptTarget = if (isAtEnd) wordText else wordText.substring(0, wordCursorOffset)
 
         val adoptResult = if (adoptTarget.isNotEmpty() && EditedVietnameseRecognizer.canRecompose(adoptTarget)) {
@@ -483,20 +438,12 @@ class ImeInputConnectionController(
             isAtEnd || (isAtOrAfterVowel && (isTone || isVowelMod))
         )
 
-        // The adopted region must span exactly the word we read from the editor.
-        // A stale/absent caret (WebView can report -1) would otherwise produce a
-        // guessed region and setComposingText would rewrite the wrong range —
-        // visually deleting the whole word. Trust only verifiable regions.
         val regionValid = wordAtCursor != null &&
                 wordAtCursor.startInEditor >= 0 &&
                 wordAtCursor.endInEditor > wordAtCursor.startInEditor &&
                 (wordAtCursor.endInEditor - wordAtCursor.startInEditor) == wordAtCursor.text.length
 
         if (shouldAdopt && regionValid) {
-            // Gate adoption by round-trip: the canonical keystrokes must replay to the
-            // exact committed word through the same compile path. If not, start fresh —
-            // the committed word stays untouched and the next keystroke begins a new
-            // syllable, never a divergent interpretation.
             val canonicalRaw = inputEngine.canonicalRawIfRoundTrips(adoptResult, adoptTarget)
             if (canonicalRaw == null) {
                 inputEngine.composeAsVietnamese = true
@@ -518,16 +465,8 @@ class ImeInputConnectionController(
             return
         }
 
-        // If not adopted as standard Vietnamese syllable, but cursor is at the end of an existing word (e.g. "confirm", "test", etc.)
-        // Exception: a consonant-only word that is a valid Vietnamese onset ("r",
-        // "th", "qu", "gi", ...) is a syllable seed, not a literal. Adopting it as
-        // literal would lock the IME into Latin mode and "r" + "aw" would type
-        // "raw" instead of composing "ră" — start a fresh Vietnamese composition.
         val composeAsVietnameseOnsetSeed = OnsetMap.ALL_ONSETS.contains(wordText.lowercase())
         if (wordAtCursor != null && isAtEnd && wordText.isNotEmpty() && composeAsVietnameseOnsetSeed && regionValid) {
-            // Adopt the onset seed as a Vietnamese composition: replay the seed
-            // keystrokes into the live state so the next character (vowel) extends
-            // it naturally into a full syllable (e.g. "ch" + "o" → "cho" underlined).
             composingStartInEditor = wordAtCursor.startInEditor
             inputEngine.composeAsVietnamese = true
             inputEngine.setComposingRaw(wordText)
@@ -613,19 +552,13 @@ class ImeInputConnectionController(
             }
             if (composingStartInEditor >= 0) {
                 if (composingCursorIndex != inputEngine.composingRawLength()) {
-                    // Mid-preedit caret: place it at the display offset of the raw caret.
                     moveCursorTo(ic, composingStartInEditor + displayCursorIndex())
                 } else {
-                    // Caret at the end: the prefix equals the full raw, so its display
-                    // length is the compiled text we already have — no extra recompile.
                     val displayCursor = compiled.length
                     selectionGuard.register(composingStartInEditor + displayCursor)
                 }
             }
             if (!isImmediateCommitMode()) {
-                // The span [composingStartInEditor, +compiled.length) now exists in
-                // the editor as our composing region; remember it so delete paths
-                // can tell it apart from a genuine selection.
                 selectionGuard.markRecentRegion(composingStartInEditor, compiled.length)
             }
             lastSetComposingText = compiled
@@ -843,7 +776,6 @@ class ImeInputConnectionController(
     fun compilePrefixDisplay(raw: CharSequence, end: Int): String {
         if (end <= 0) return ""
         if (end >= raw.length) return compileRawDisplay()
-        // Pass raw + end directly — compileRaw reads chars without needing a substring
         inputEngine.compileRaw(raw, inputEngine.composeAsVietnamese, displayBuf, end)
         return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), raw.subSequence(0, end).toString())
     }
@@ -875,12 +807,6 @@ class ImeInputConnectionController(
 
     fun compileText(raw: String): String {
         if (raw.isEmpty()) return ""
-        // The caller always passes Telex keystrokes (canonical raw). Vietnamese
-        // compilation MUST NOT depend on the current composeAsVietnamese flag: a word
-        // that went literal (rawSuffix) would otherwise fail this round-trip and
-        // stay locked in literal mode forever — after backspace the remaining
-        // display ("tiê", "ê") would never re-transform even though it is a valid
-        // Vietnamese syllable. Force Vietnamese mode here.
         inputEngine.compileRaw(raw, vietnamese = true, displayBuf)
         return VietnameseUnicode.applyCasingFromRaw(displayBuf.toStringVal(), raw)
     }
@@ -890,13 +816,11 @@ class ImeInputConnectionController(
         val store = inputEngine.macroStore ?: return null
         if (store.isEmpty()) return null
 
-        // Case 1: unaccented / raw trigger (e.g. "vn" -> "Việt Nam", "rs" -> "RoSino18k")
         store.lookup(raw.lowercase())?.let { expansion ->
             return applyMacroCase(expansion, raw) + wordBreak
         }
 
-        // Case 2: accented Vietnamese trigger (e.g. "đc" -> "được", "ng" -> "người")
-        val composed = compileText(raw)   // without wordBreak
+        val composed = compileText(raw)
         if (composed != raw) {
             store.lookup(composed.lowercase())?.let { expansion ->
                 return applyMacroCase(expansion, composed) + wordBreak
@@ -933,9 +857,6 @@ class ImeInputConnectionController(
                         }
                     }
                     if (!isImmediateCommitMode()) {
-                        // The span we are committing was a composing region in the
-                        // editor; keep it for a short window so a stale selection
-                        // report from the editor is not mistaken for a user one.
                         selectionGuard.markRecentRegion(composingStartInEditor, lastSetComposingText?.length ?: 0)
                     }
                     recordImeCommit(outputText.trim())

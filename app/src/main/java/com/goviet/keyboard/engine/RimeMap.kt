@@ -26,36 +26,24 @@ object RimeMap {
         val tnNewCoda: Int = tnNew
     )
 
-    // Coda groups — exact pairs that actually exist in Vietnamese
-    // (verified against the 17,974-syllable corpus; NOT the full Cartesian product).
-    //   c/ch/p/t = stop codas → only acute/dot (sắc/nặng) tones
-    //   m/n/ng/nh = nasal codas → 6 tones
-    val C_ALL   = arrayOf("c","ch","p","t","m","n","ng","nh") // Full coda set
-    val C_SHORT = arrayOf("c","p","t","m","n","ng")           // ă, â, o, ô, u, uô, ươ, iê, uo, ie
-    val C_I     = arrayOf("ch","p","t","m","n","nh")          // i (no c, no ng)
-    val C_O5    = arrayOf("p","t","m","n")                    // ơ (no c, no ng)
-    val C_U8    = arrayOf("c","m","n","ng","t")               // ư (no p)
-    val C_Y     = arrayOf("p","t","ch","n","nh")              // y
-    val C_OE    = arrayOf("m","n","p","t")                        // oe
-    val C_OA5   = arrayOf("c","m","n","ng","p","t")               // oă coda set
-    val C_UE    = arrayOf("ch","n","nh","t")                          // ue, uê
-    val C_UA4   = arrayOf("c","n","ng","t")                       // uâ
-    val C_UA    = arrayOf("n","ng","t")                            // ua
-    val C_UY2   = arrayOf("p","t","ch","n","nh")              // uy
-    val C_OO    = arrayOf("c","ng")                           // oo open rime set
-    val C_UYE   = arrayOf("n","t")                            // uye/uyê
-    val C_TMNG  = arrayOf("t","m","n","ng")                   // ye/yê (pre-fold raw)
+    val C_ALL   = arrayOf("c","ch","p","t","m","n","ng","nh")
+    val C_SHORT = arrayOf("c","p","t","m","n","ng")
+    val C_I     = arrayOf("ch","p","t","m","n","nh")
+    val C_O5    = arrayOf("p","t","m","n")
+    val C_U8    = arrayOf("c","m","n","ng","t")
+    val C_Y     = arrayOf("p","t","ch","n","nh")
+    val C_OE    = arrayOf("m","n","p","t")
+    val C_OA5   = arrayOf("c","m","n","ng","p","t")
+    val C_UE    = arrayOf("ch","n","nh","t")
+    val C_UA4   = arrayOf("c","n","ng","t")
+    val C_UA    = arrayOf("n","ng","t")
+    val C_UY2   = arrayOf("p","t","ch","n","nh")
+    val C_OO    = arrayOf("c","ng")
+    val C_UYE   = arrayOf("n","t")
+    val C_TMNG  = arrayOf("t","m","n","ng")
     val C_NONE  = emptyArray<String>()
 
     private lateinit var _nuclei: Array<NucSpec>
-
-
-
-    // ── Vietnamese rime character → 5-bit index encoding ──────────
-    //
-    // All 29 characters that appear in Vietnamese nuclei + codas.
-    // Index 0..27 = Vietnamese chars; 28 = PADDING (for shorter keys).
-    // 5 bits per char, max 5 chars → 25-bit key (fits Int).
 
     /** Rime-alphabet character set: a ă â e ê i o ô ơ u ư y c g h m n p t + l r s j x q
      *  plus guard slots b d k v z.  The guard chars are never part of a valid rime
@@ -107,61 +95,19 @@ object RimeMap {
         return (length shl 25) or chars
     }
 
-    // ── Incremental key building (hot-path helpers) ───────────────
-    //
-    // Extend an existing rime key with additional characters without
-    // re-encoding the whole string — used in the composer's resegment loop.
-
-    // ── Flat map lookup table ─────────────────────────────────────
-    //
-    // Primitive IntArray+ByteArray tables — zero boxing, zero GC.
-    // Key encodes (length << 25) | (char-encoded rime) so strings of
-    // different lengths never collide.
-
     private const val TABLE_BITS = 14
-    private const val TABLE_SIZE = 1 shl TABLE_BITS   // 16384 slots
-    private const val TABLE_MASK = TABLE_SIZE - 1     // syllable-prefix table only
+    private const val TABLE_SIZE = 1 shl TABLE_BITS
+    private const val TABLE_MASK = TABLE_SIZE - 1
 
     private val table = IntFlatTable(TABLE_BITS)
-    private lateinit var _fold: LongArray    // per-nucleus fold targets (e/o/a + w-primary)
-    private lateinit var _foldW: IntArray    // per-nucleus w alt variant + flags
+    private lateinit var _fold: LongArray
+    private lateinit var _foldW: IntArray
 
-    // Vowel combination map: (nucleus, char) → combined nucleus
-    // Flatmap for vowel combinations: n1 + typed-vowel → compound nucleus.
-    // Auto-derived from NUCLEI raw→display at build() time.
     private const val COMB_BITS = 4
     private const val COMB_SIZE = 1 shl COMB_BITS
     private const val COMB_MASK = COMB_SIZE - 1
     private lateinit var _combineKeys: IntArray
     private lateinit var _combineVals: Array<String>
-
-    // Data byte layout:
-    //   bit 0: isPrefix  (valid prefix of some rime)
-    //   bit 1: isComplete (complete valid rime)
-    //   bit 2: isStop    (stop coda: c, ch, p, t)
-    //   bits 3-4: tonePosition (0-2)
-    //
-    // Fold-target tables (`_fold`, `_foldW`) carry Telex fold data as fields
-    // on the flat-map values — one O(1) lookup answers BOTH "what does this
-    // nucleus fold to" AND "where the tone lands".  No separate rule tables.
-    //
-    // `_fold[slot]` (nucleus entries only):
-    //   bits 0-15:  'e' fold code
-    //   bits 16-31: 'o' fold code
-    //   bits 32-47: 'a' fold code
-    //   bits 48-63: 'w' primary fold code
-    //
-    // `_foldW[slot]`:
-    //   bits 0-15:  'w' alt fold code (dual-variant uo→uơ/ươ)
-    //   bit 16:     primary code uses lookahead (ua/oa/uo)
-    //   bit 17:     alt code uses lookahead (uo)
-    //   bit 30:     nucleus is a w-compound display form (uơ/ươ/ưa/oă…)
-    //
-    // A 16-bit fold code:
-    //   bits 0-2:  primary position in nucleus
-    //   bits 3-7:  primary replacement char index (31 = invalid/none)
-    //   bits 8-10: secondary position (compound folds)
-    //   bits 11-15: secondary replacement char index (31 = none)
 
     /** Initialize the flat map and syllable prefix table.  Called once at class load time. */
     init { build()
@@ -198,23 +144,11 @@ object RimeMap {
         _fold = LongArray(TABLE_SIZE)
         _foldW = IntArray(TABLE_SIZE)
 
-        // ── Vowel combination map ──────────────────────────────────
         _combineKeys = IntArray(COMB_SIZE)
         _combineVals = arrayOf("", "", "", "", "", "", "", "",
                                "", "", "", "", "", "", "", "")
 
-
-        // ── Nuclei and their valid codas (from phonology table) ────
-        //
-        // Each NucSpec: nucleus string, valid codas, tone position index,
-        // and optional old-style tone position override.
-        // Tone position: 0 = vowel itself, 1 = digraph second char,
-        //                2 = trigraph middle char.
-        // "isStop": coda in {c, ch, p, t} → only acute/dot (sắc/nặng) tones allowed.
-
-
         _nuclei = arrayOf(
-            // ── Single vowels — tone on the vowel itself (pos 0) ──
             NucSpec("a",  C_ALL,   0), NucSpec("ă",  C_SHORT, 0),
             NucSpec("â",  C_SHORT, 0), NucSpec("e",  C_ALL,   0),
             NucSpec("ê",  C_ALL,   0), NucSpec("i",  C_I,     0),
@@ -222,9 +156,6 @@ object RimeMap {
             NucSpec("ơ",  C_O5,    0), NucSpec("u",  C_SHORT, 0),
             NucSpec("ư",  C_U8,    0), NucSpec("y",  C_Y,     0),
 
-            // ── Digraph nuclei — tone on main vowel (modern) ──────
-            // (glide + main). Tone position follows the s.ngonngu.net
-            // canonical table: oa/oai→a, oe→e, uy→y, iê/uô/ươ→2nd char.
             NucSpec("oa", C_ALL,   1, 0), NucSpec("oă", C_OA5,  1, 0),
             NucSpec("oe", C_OE,    1, 0), NucSpec("ue", C_UE,   1, 0),
             NucSpec("uy", C_UY2,   1, 0), NucSpec("uâ", C_UA4,  1, 1),
@@ -236,10 +167,8 @@ object RimeMap {
             NucSpec("ye", C_TMNG,  1, 1), NucSpec("yê", C_TMNG, 1, 1),
             NucSpec("oo", C_OO,    1, 1),
 
-            // ── Trigraph nuclei — tone on middle vowel (pos 2) ────
             NucSpec("uye", C_UYE,  2),    NucSpec("uyê", C_UYE, 2),
 
-            // ── Open rimes (no final consonant) ────────────────────
             NucSpec("ai",  C_NONE, 0), NucSpec("ao",  C_NONE, 0),
             NucSpec("au",  C_NONE, 0), NucSpec("ay",  C_NONE, 0),
             NucSpec("âu",  C_NONE, 0), NucSpec("ây",  C_NONE, 0),
@@ -262,7 +191,6 @@ object RimeMap {
             NucSpec("ueu", C_NONE, 1), NucSpec("uêu", C_NONE, 1),
         )
 
-        // ── Populate: all complete rimes + their prefixes ──────────
         val allRimes = mutableListOf<String>()
 
         for (spec in _nuclei) {
@@ -290,9 +218,6 @@ object RimeMap {
                 allRimes.add(rime)
                 val rk = rimeKey(rime)
                 val isStop = c == "c" || c == "ch" || c == "p" || c == "t"
-                // With a final consonant (coda), the tone always lands on the main
-                // vowel regardless of old/new placement style (hoàn, toán — never
-                // hòan/tóan). tnOld only differs for open rimes oa/oe/uy.
                 table.insert(rk, packData(1, 1, if (isStop) 1 else 0, spec.tnNewCoda, spec.tnNewCoda))
             }
         }
@@ -304,15 +229,8 @@ object RimeMap {
             }
         }
 
-        // ── Vowel combination map (derived from raw→display of NUCLEI) ──
-        //
-        // For each nucleus N and each base vowel V, compute the raw keystroke
-        // for N+V; if it maps to a DIFFERENT display nucleus, that's a valid
-        // vowel combination (e.g. ư + raw('o') → raw("uw"+"o") = "uwo" → "ươ").
-        // All lookup is O(1) via the rawToDisplay flatmap — no hardcoded pairs.
         val rawToDisplay = HashMap<String, String>(_nuclei.size * 2)
         for (spec in _nuclei) rawToDisplay[rawKeyForNucleus(spec.nucleus)] = spec.nucleus
-        // Overrides win over any naive collisions (uơi/ươi share raw "uowi").
         for (spec in _nuclei) {
             val override = rawOverride(spec.nucleus.lowercase())
             if (override != null) rawToDisplay[override] = spec.nucleus
@@ -322,7 +240,6 @@ object RimeMap {
             val baseRaw = rawKeyForNucleus(spec.nucleus)
             for (v in plainVowels) {
                 val combined = rawToDisplay[baseRaw + v] ?: continue
-                // Skip no-op entries: plain extend already handles nucleus+v
                 if (combined == spec.nucleus + v) continue
                 combineInsert(spec.nucleus, v, combined)
             }
@@ -338,7 +255,6 @@ object RimeMap {
                 (tnNew shl 3) or (tnOld shl 5)
     }
 
-    // ── Vowel combination lookup ─────────────────────────────────
     private fun combineInsert(nucLower: String, charLower: Char, result: String) {
         val compositeKey = keyCat(nucLower, nucLower.length, charLower)
         var slot = (compositeKey * -0x61c88647).toInt() and COMB_MASK
@@ -474,15 +390,6 @@ object RimeMap {
         return ((baseLen + extLen) shl 25) or chars
     }
 
-    // ── Fold-target data (fields on the flat-map value) ───────────
-    //
-    // The Telex fold targets are baked into the map at build time, so the
-    // composer decides folds by lookup, not by if/else rule chains:
-    //   'a' → a/ă → â,  'e' → e → ê,  'o' → o/ơ → ô,
-    //   'w' → uo/uô → ươ|uơ, ua → ưa, oa → oă, and singles a→ă, o→ơ, u→ư.
-    // The uo→uơ fold-back guard ("uowo stays uơo") is expressed here as
-    // *absent* fold data on the "uơ" nucleus, not as a runtime comparison.
-
     private const val NO_FOLD_CHAR = 31
     private val CHAR_AT = RIME_ALPHA.toCharArray()
 
@@ -532,21 +439,21 @@ object RimeMap {
         val n = nuc.lowercase()
         val uo = n.indexOf("uo")
         if (uo >= 0) {
-            val prim = foldCode(uo, 'ư', uo + 1, 'ơ').toLong()   // ươ
-            val alt = foldCode(uo, 'u', uo + 1, 'ơ').toLong()    // uơ (anchor on u)
+            val prim = foldCode(uo, 'ư', uo + 1, 'ơ').toLong()
+            val alt = foldCode(uo, 'u', uo + 1, 'ơ').toLong()
             return prim or (alt shl 16) or (0b11L shl 32)
         }
         val uoHorn = n.indexOf("uô")
         if (uoHorn >= 0) {
-            val prim = foldCode(uoHorn, 'ư', uoHorn + 1, 'ơ').toLong()   // ươ
-            val alt = foldCode(uoHorn, 'u', uoHorn + 1, 'ơ').toLong()    // uơ
+            val prim = foldCode(uoHorn, 'ư', uoHorn + 1, 'ơ').toLong()
+            val alt = foldCode(uoHorn, 'u', uoHorn + 1, 'ơ').toLong()
             return prim or (alt shl 16) or (0b11L shl 32)
         }
-        if (n.contains("ươ")) return 0L                       // already horned — no-op
+        if (n.contains("ươ")) return 0L
         val ua = n.indexOf("ua")
-        if (ua >= 0) return foldCode(ua, 'ư').toLong() or (1L shl 32)    // ưa
+        if (ua >= 0) return foldCode(ua, 'ư').toLong() or (1L shl 32)
         val oa = n.indexOf("oa")
-        if (oa >= 0) return foldCode(oa + 1, 'ă').toLong() or (1L shl 32) // oă
+        if (oa >= 0) return foldCode(oa + 1, 'ă').toLong() or (1L shl 32)
         for (i in n.indices) {
             if (n[i] == 'u') {
                 val next = i + 1
@@ -558,7 +465,6 @@ object RimeMap {
         for (i in n.indices) {
             if (n[i] == 'o' && !(i > 0 && n[i - 1] == 'u')) return foldCode(i, 'ơ').toLong()
         }
-        // Hat→horn folds within vowel families: â→ă, ô→ơ
         val hatA = n.indexOf('â')
         if (hatA >= 0) return foldCode(hatA, 'ă').toLong()
         val hatO = n.indexOf('ô')
@@ -665,10 +571,6 @@ object RimeMap {
         }
         return String(buf)
     }
-
-
-
-    // ── Vietnamese phonological utilities ──
 
     /** 12 Vietnamese base vowels (unaccented): a ă â e ê i o ô ơ u ư y. */
     val BASE_VOWELS = "aăâeêioôơuưy"
@@ -785,10 +687,6 @@ object RimeMap {
         return if (oldTonePlacement) toneOldAt(i) else toneNewAt(i)
     }
 
-
-    // ── Syllable prefix table (auto-generated from 18342 syllables) ──────
-    // Single source of truth for display-prefix
-    // validation (e.g. qu+ư invalid, onset+rime must be a prefix of a real syllable).
     private lateinit var _sylTable: LongArray
 
     private fun sylPackKey(s: String): Long {
@@ -857,9 +755,6 @@ object RimeMap {
         }
         return sb.toString()
     }
-    // ── Vietnamese onset-rime phonotactic rules ─────────────
-    // Source: QĐ 01/2003/QĐ-BGDĐT + Ngữ pháp tiếng Việt.
-    // Onset-rime compatibility: which vowels can follow each onset.
     private fun onsetAllowsFirstVowel(onset: String, vowel: Char): Boolean {
         return when (onset) {
             "c" -> vowel == 'a' || vowel == 'ă' || vowel == 'â' ||
@@ -877,7 +772,7 @@ object RimeMap {
             "qu" -> vowel == 'a' || vowel == 'e' || vowel == 'i' ||
                     vowel == 'o' || vowel == 'y'
             "gi" -> true
-            else -> true  // free onsets: b,ch,d,đ,h,kh,l,m,n,nh,ph,p,r,s,t,th,tr,v,x
+            else -> true
         }
     }
 
@@ -888,32 +783,24 @@ object RimeMap {
             "ngh", "ng", "nh", "th", "tr", "ch", "ph", "kh", "gh", "gi", "qu",
             "b", "c", "d", "đ", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x"
         )
-        // Insert bare onsets + auto-generate partial onset prefixes
-        // e.g. "qu" generates "q", "ngh" generates "n", "ng", etc.
         for (onset in onsets) {
             sylInsert(sylPackKey(onset))
             for (len in 1 until onset.length) {
                 sylInsert(sylPackKey(onset.substring(0, len)))
             }
         }
-        // Insert bare vowels
         for (spec in _nuclei) sylInsert(sylPackKey(spec.nucleus))
-        // Generate onset + nucleus + (optional coda) combinations
         for (onset in onsets) {
             for (spec in _nuclei) {
                 val nuc = spec.nucleus
                 val firstChar = nuc[0].lowercaseChar()
                 if (!onsetAllowsFirstVowel(onset, firstChar)) continue
-                // gi is special: "gi" + "i" = "gi" (not "gii"),
-                // "gi" + "ie" = "gie" (not "giie")
                 val syllable = if (onset == "gi" && (nuc == "i" || nuc[0] == 'i')) {
                     if (nuc == "i") "gi" else "gi" + nuc.substring(1)
                 } else {
                     "$onset$nuc"
                 }
-                // Open rime
                 for (len in onset.length..syllable.length) sylInsert(sylPackKey(syllable.substring(0, len)))
-                // Closed rimes
                 for (coda in spec.codas) {
                     val closed = syllable + coda
                     for (len in onset.length..closed.length) sylInsert(sylPackKey(closed.substring(0, len)))

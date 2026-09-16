@@ -6,11 +6,11 @@ package com.goviet.keyboard.engine
  */
 enum class Tone(val index: Int, val key: Char?) {
     NONE(0, null),
-    ACUTE(1, 's'),  // acute
-    GRAVE(2, 'f'),  // grave
-    HOOK(3, 'r'),   // hook above
-    TILDE(4, 'x'),  // tilde
-    DOT(5, 'j');    // dot below
+    ACUTE(1, 's'),
+    GRAVE(2, 'f'),
+    HOOK(3, 'r'),
+    TILDE(4, 'x'),
+    DOT(5, 'j');
 
     companion object {
         fun fromKey(c: Char): Tone? = when (c.lowercaseChar()) {

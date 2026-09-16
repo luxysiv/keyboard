@@ -8,12 +8,8 @@ package com.goviet.keyboard.engine
  */
 object OnsetMap {
 
-    // ── Character encoding (onset-specific alphabet) ─────────────
-    // 5 bits → max 32 unique indices. This alphabet covers all Vietnamese
-    // onset consonants so each char gets a unique index (no collisions).
-    // 'w' is an onset consonant for the direct-w option (English/loan words).
     private const val ONSET_ALPHA = "aăâeêioôơuqwycmntpghbdkđlrsvx"
-    private const val W_INDEX = ONSET_ALPHA.length  // 28
+    private const val W_INDEX = ONSET_ALPHA.length
     private val ONSET_AT = ONSET_ALPHA.toCharArray()
     private val CHAR_IDX = IntArray(512).also { arr ->
         for (i in ONSET_ALPHA.indices) arr[ONSET_ALPHA[i].code] = i
@@ -35,8 +31,6 @@ object OnsetMap {
 
     private fun onsetKey(c: Char): Int = (1 shl 25) or charIndex(c)
 
-    // ── Data ──────────────────────────────────────────────────────
-
     /**
      * All valid Vietnamese onsets — ordered longest-first for greedy prefix matching.
      * This replaces both ONSETS and ONSET_LETTERS.
@@ -46,23 +40,13 @@ object OnsetMap {
         "b", "c", "d", "đ", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "x"
     )
 
-    // ── Hash table ────────────────────────────────────────────────
     private const val TABLE_BITS = 11
     private const val TABLE_SIZE = 1 shl TABLE_BITS
 
     private val table = IntFlatTable(TABLE_BITS)
     private lateinit var _fold: ByteArray
-    private lateinit var _foldKey: CharArray  // reverse: fold-result slot → fold key
-    private lateinit var _foldKeySet: BooleanArray  // fast pre-check: chars that have fold data
-    // Data byte layout (only bits 0 and 2 are currently used):
-    //   bit 0: isComplete — every stored entry is a complete onset; prefix
-    //          detection for composition is handled by isConsonant
-    //   bit 2: allows the OPEN rime "uơ" (huơ, thuở, khuơ, quơ, luơ…)
-    //
-    // `_fold[slot]` carries the Telex fold target for the onset (only d→đ
-    // today), same 16-bit code shape as RimeMap folds — folded down to one
-    // byte since onset folds are always single-char at position 0:
-    //   bits 0-2: position, bits 3-7: replacement char index (0 = no fold).
+    private lateinit var _foldKey: CharArray
+    private lateinit var _foldKeySet: BooleanArray
 
     init { build() }
 
@@ -70,22 +54,14 @@ object OnsetMap {
         _fold = ByteArray(TABLE_SIZE)
         _foldKey = CharArray(TABLE_SIZE)
         _foldKeySet = BooleanArray(512)
-        // Insert all complete onsets (NO prefix entries for single chars
-        // like 'q' — those are handled by isConsonant).
         for (o in ALL_ONSETS) table.insertOr(onsetKey(o), 0x01)
-        // Onsets after which the open rime "uơ" is real (list derived from the
-        // actual words containing the rime "uơ": huơ, thuở, khuơ, quơ, luơ).
         val openUoOnsets = arrayOf("h", "th", "kh", "qu", "l")
         for (o in openUoOnsets) table.insertOr(onsetKey(o), 0x04)
-        // Fold target: plain 'd' onset + 'd' → 'đ' (the fold/untoggle cycle is
-        // the SAME mechanism as the nucleus folds — data on the map value).
         val dSlot = table.find(onsetKey("d"))
         if (dSlot >= 0) {
             _fold[dSlot] = foldCode(0, 'đ').toByte()
-            // Record reverse: đ's slot maps back to fold key 'd'
             val foldedSlot = table.find(onsetKey("đ"))
             if (foldedSlot >= 0) _foldKey[foldedSlot] = 'd'
-            // Data-driven: 'd' is the only onset fold key today.
             _foldKeySet['d'.code] = true
         }
     }
@@ -119,8 +95,6 @@ object OnsetMap {
         return 0
     }
 
-    // Single-char check that combines "valid onset" + "first char of a compound"
-    // into ONE BooleanArray(512) lookup — hot path in the composer loop.
     private val CONSONANT_BOOL = BooleanArray(512).also { arr ->
         for (o in ALL_ONSETS) if (o.length == 1) arr[o[0].lowercaseChar().code] = true
         for (o in ALL_ONSETS) if (o.length > 1) arr[o[0].lowercaseChar().code] = true
