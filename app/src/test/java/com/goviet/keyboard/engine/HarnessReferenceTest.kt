@@ -4,7 +4,6 @@ import com.goviet.keyboard.engine.reference.ReferenceComposer
 import com.goviet.keyboard.engine.reference.ReferenceDictionary
 import org.junit.Test
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 
 /**
  * Comparison harness: drives the production [VietnameseComposer] and the
@@ -97,6 +96,5 @@ class HarnessReferenceTest {
         for (keys in corpus.distinct()) {
             diag(keys, "sweep")
         }
-        assertTrue(true, "diagnostic sweep completed")
     }
 }
