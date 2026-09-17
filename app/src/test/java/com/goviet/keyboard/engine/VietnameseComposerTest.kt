@@ -330,13 +330,13 @@ class VietnameseComposerTest {
 
     @Test
     fun testSecondWAfterUoCompoundIsLiteral() {
-        // u o w -> uơ (fold), u o w w -> uơw: phím w thứ 2 sau uơ/ươ không hủy
-        // fold cũng không bị nuốt — nó được thả ra làm literal text.
+        // u o w -> uơ (fold), u o w w -> uow: phím w thứ 2 (liền kề sau fold)
+        // hủy fold và thả ra làm literal text — đồng bộ với d→đ / phím dấu.
         assertEquals("hướng", engine.process("huowngs"))
-        assertEquals("uơw", engine.process("uoww"))
-        assertEquals("thuơw", engine.process("thuoww"))
-        assertEquals("bươw", engine.process("buoww"))
-        assertEquals("hươwngs", engine.process("huowwngs"))
+        assertEquals("uow", engine.process("uoww"))
+        assertEquals("thuow", engine.process("thuoww"))
+        assertEquals("buow", engine.process("buoww"))
+        assertEquals("huowngs", engine.process("huowwngs"))
     }
 
     @Test
@@ -347,11 +347,11 @@ class VietnameseComposerTest {
         assertEquals("chuaw", engine.process("chuaww"))
         assertEquals("hoaw", engine.process("hoaww"))
         assertEquals("đuaw", engine.process("dduaww"))
-        // Nhánh uo (uơ/ươ): phím w thứ 2 thả literal (uoww -> uơw).
-        assertEquals("uơw", engine.process("uoww"))
-        assertEquals("thuơw", engine.process("thuoww"))
-        assertEquals("bươw", engine.process("buoww"))
-        assertEquals("hươwngs", engine.process("huowwngs"))
+        // Nhánh uo (uơ/ươ): phím w thứ 2 liền kề hủy fold và thả literal (uoww -> uow).
+        assertEquals("uow", engine.process("uoww"))
+        assertEquals("thuow", engine.process("thuoww"))
+        assertEquals("buow", engine.process("buoww"))
+        assertEquals("huowngs", engine.process("huowwngs"))
     }
 
     @Test
@@ -539,13 +539,13 @@ class VietnameseComposerTest {
 
         // uwo / uwow / wo produce ươ
         assertEquals("ươ", engine.process("uwo"))
-        assertEquals("ươ", engine.process("uwow"))
+        assertEquals("ươw", engine.process("uwow"))
         assertEquals("ươ", engine.process("wo"))
         assertEquals("tươ", engine.process("tuwo"))
-        assertEquals("tươ", engine.process("tuwow"))
+        assertEquals("tươw", engine.process("tuwow"))
         assertEquals("tươi", engine.process("tuwoi"))
         assertEquals("mươ", engine.process("muwo"))
-        assertEquals("mươ", engine.process("muwow"))
+        assertEquals("mươw", engine.process("muwow"))
         assertEquals("mươi", engine.process("muwoi"))
 
         assertEquals("ương", engine.process("wong"))
@@ -958,7 +958,7 @@ class VietnameseComposerTest {
     fun testUoOrderIndependence() {
         assertEquals("uơ", engine.process("uow"))
         assertEquals("ươ", engine.process("uwo"))
-        assertEquals("ươ", engine.process("uwow"))
+        assertEquals("ươw", engine.process("uwow"))
     }
 
     @Test
