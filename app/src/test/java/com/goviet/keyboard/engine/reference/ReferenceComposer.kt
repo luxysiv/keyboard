@@ -21,10 +21,11 @@ package com.goviet.keyboard.engine.reference
  *    nucleus to its plain form and keeping the key literal
  *    ("aanww" -> "anw", "uoww" -> "uow");
  *  - a plain vowel after a coda still folds the nucleus when that lands on a
- *    real syllable ("tuana" -> "tuân"), otherwise it starts a new syllable
- *    ("khoan" + "a");
- *  - when no real Vietnamese syllable covers the keystrokes, the raw text is
- *    echoed verbatim (Phần 3 of the spec).
+ *    real syllable ("tuana" -> "tuân");
+ *  - each word composes at most one syllable: the longest valid prefix, then
+ *    the rest of the word stays literal (Phần 3 of the spec), so "chiocs",
+ *    "yenw", "undefined" echo whole instead of being free-split into
+ *    dictionary fragments.
  */
 class ReferenceComposer(private val dict: ReferenceDictionary) {
 
@@ -47,15 +48,15 @@ class ReferenceComposer(private val dict: ReferenceDictionary) {
             if (c == ' ') {
                 out.append(' ')
                 i++
+                continue
+            }
+            val syl = parseSyllable(raw, i)
+            if (syl !== null) {
+                out.append(syl.text)
+                i = syl.next
             } else {
-                val syl = parseSyllable(raw, i)
-                if (syl !== null) {
-                    out.append(syl.text)
-                    i = syl.next
-                } else {
-                    out.append(c)
-                    i++
-                }
+                out.append(c)
+                i++
             }
         }
         return out.toString()
