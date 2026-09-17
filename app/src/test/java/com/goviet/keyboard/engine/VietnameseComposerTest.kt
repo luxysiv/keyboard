@@ -521,16 +521,16 @@ class VietnameseComposerTest {
         assertEquals("mưa", engine.process("muwa"))
         assertEquals("chưa", engine.process("chuwa"))
 
-        // w + o / u + o + w / free w
-        assertEquals("ươ", engine.process("wo"))
+        // w + o parks the same pending ưo; a following tone resolves it
+        assertEquals("ưo", engine.process("wo"))
         assertEquals("ướ", engine.process("wos"))
-        assertEquals("mươ", engine.process("mwo"))
+        assertEquals("mưo", engine.process("mwo"))
         assertEquals("mướ", engine.process("mwos"))
-        assertEquals("dươ", engine.process("dwo"))
-        assertEquals("tươ", engine.process("two"))
-        assertEquals("hươ", engine.process("hwo"))
-        assertEquals("thươ", engine.process("thwo"))
-        assertEquals("chươ", engine.process("chwo"))
+        assertEquals("dưo", engine.process("dwo"))
+        assertEquals("tưo", engine.process("two"))
+        assertEquals("hưo", engine.process("hwo"))
+        assertEquals("thưo", engine.process("thwo"))
+        assertEquals("chưo", engine.process("chwo"))
 
         // uơ only goes with h (huơ, huở), th (thuở), q/qu (quở)
         assertEquals("huơ", engine.process("huow"))
@@ -540,7 +540,8 @@ class VietnameseComposerTest {
         assertEquals("hương", engine.process("huowng"))
         assertEquals("thương", engine.process("thuowng"))
 
-        // uow is uơ (open rime) across all onsets; uwo / uwow / wo are ươ
+        // uow is uơ (open rime) across all onsets; uwo / uwow / wo park the
+        // double-duty w as pending "ưo" until a valid continuation resolves it
         assertEquals("uơ", engine.process("uow"))
         assertEquals("mươ", engine.process("muow"))
         assertEquals("dươ", engine.process("duow"))
@@ -549,16 +550,21 @@ class VietnameseComposerTest {
         assertEquals("luơ", engine.process("luow"))
         assertEquals("cươ", engine.process("cuow"))
 
-        // uwo / uwow / wo produce ươ
-        assertEquals("ươ", engine.process("uwo"))
-        assertEquals("ươw", engine.process("uwow"))
-        assertEquals("ươ", engine.process("wo"))
-        assertEquals("tươ", engine.process("tuwo"))
-        assertEquals("tươw", engine.process("tuwow"))
+        // u/(pivot w)/o parks "ưo" (order-mirror of plain "uo"); the pivot w
+        // resolves ưo -> ươ, a bare word keeps ưo, a valid coda/vowel resolves
+        // it first, and an invalid follower stays literal (uwok -> ưok)
+        assertEquals("ưo", engine.process("uwo"))
+        assertEquals("ươ", engine.process("uwow"))
+        assertEquals("ưo", engine.process("wo"))
+        assertEquals("tưo", engine.process("tuwo"))
+        assertEquals("tươ", engine.process("tuwow"))
         assertEquals("tươi", engine.process("tuwoi"))
-        assertEquals("mươ", engine.process("muwo"))
-        assertEquals("mươw", engine.process("muwow"))
+        assertEquals("mưo", engine.process("muwo"))
+        assertEquals("mươ", engine.process("muwow"))
         assertEquals("mươi", engine.process("muwoi"))
+        assertEquals("ươc", engine.process("uwoc"))
+        assertEquals("ưok", engine.process("uwok"))
+        assertEquals("uow", engine.process("uwoww"))
 
         assertEquals("ương", engine.process("wong"))
         assertEquals("ướng", engine.process("wongs"))
@@ -969,8 +975,9 @@ class VietnameseComposerTest {
     @Test
     fun testUoOrderIndependence() {
         assertEquals("uơ", engine.process("uow"))
-        assertEquals("ươ", engine.process("uwo"))
-        assertEquals("ươw", engine.process("uwow"))
+        assertEquals("ưo", engine.process("uwo"))
+        assertEquals("ươ", engine.process("uwow"))
+        assertEquals("uow", engine.process("uwoww"))
     }
 
     @Test

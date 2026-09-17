@@ -65,8 +65,6 @@ class HarnessReferenceTest {
      */
     private companion object {
         val DECIDED_DIVERGENCES = mapOf(
-            "tuwowng" to "engine does not fold alternate order uwow->ương (only uowng); ref = real word",
-            "huwowng" to "engine does not fold alternate order uwow->ương; ref = real word",
             "chiocs" to "ref splits chi+óc; engine echoes (no full syllable chioc); ref free-split artifact",
             "yenw" to "ref splits y+en+ư; engine echoes; ref free-split artifact",
             "undefined" to "English input: ref splits un+dèined; engine echoes; ref free-split artifact"

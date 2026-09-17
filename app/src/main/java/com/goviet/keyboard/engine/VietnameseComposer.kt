@@ -259,7 +259,8 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         var justUntoggled: Boolean = false,
         var fold: FoldAnchor = FoldAnchor(),
         var pendingTone: Tone = Tone.NONE,
-        var pendingToneKey: Char = '\u0000'
+        var pendingToneKey: Char = '\u0000',
+        var pendingUo: Boolean = false
     )
 
     /**
@@ -388,6 +389,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
             val rk = ctx.rimeKey
             if (RimeMap.isRimeKeyValidForTone(rk, targetTone)) {
+                if (ctx.pendingUo) resolvePendingUo(out, ctx)
                 out.tone = targetTone
                 ctx.lastToneKey = cLow
             } else {
@@ -479,6 +481,29 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 ctx.justUntoggled = true
                 return pos + 1
             }
+            /*
+             * u/pivot-w pending compound: "uw" -> ư parks the double-duty w, so
+             * a trailing 'o' keeps the w visible as "ưo" (uwo -> ưo, wo -> ưo)
+             * instead of folding straight to ươ.  The pivot 'w' resolves it
+             * (uwow -> ươ), and any continuation that ươ accepts resolves it
+             * first (uwoc -> ươc, uwoi -> ươi); an invalid follower keeps the
+             * pending form (uwok -> ưok).  Keys are computed as if "ươ" all
+             * along, so prefix/coda validation needs no special casing.
+             */
+            if (cLow == 'o' && out.coda.isEmpty() && (out.nucleus == "ư" || out.nucleus == "Ư")) {
+                out.nucleus = if (out.nucleus == "Ư") "Ưo" else "ưo"
+                ctx.pendingUo = true
+                ctx.nucKey = RimeMap.rimeKey("ươ")
+                ctx.rimeKey = ctx.nucKey
+                ctx.fold.clear()
+                return pos + 1
+            }
+            if (ctx.pendingUo && cLow == 'w') {
+                out.nucleus = out.nucleus.replace('o', 'ơ')
+                ctx.pendingUo = false
+                ctx.fold.set('w', 0, pos, plainNucleus = "uo")
+                return pos + 1
+            }
             val plainNuc = out.nucleus
             val foldIdx = applyFoldRules(c, ctx.nucKey, pos, raw, out)
             if (foldIdx >= 0) {
@@ -538,6 +563,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         if (out.coda.isEmpty()) {
             val candidateKey = RimeMap.extendKeySingle(ctx.nucKey, c)
             if (RimeMap.isValidPrefix(candidateKey)) {
+                if (ctx.pendingUo) resolvePendingUo(out, ctx)
                 out.nucleus += c
                 ctx.nucKey = candidateKey
                 ctx.rimeKey = ctx.nucKey
@@ -545,6 +571,12 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
             }
         }
         return false
+    }
+
+    /** Parked u/pivot-w compound (see applyModifierFold) → display "ươ". */
+    private fun resolvePendingUo(out: SyllableState, ctx: ScanCtx) {
+        out.nucleus = out.nucleus.replace('o', 'ơ')
+        ctx.pendingUo = false
     }
 
     /**
@@ -559,6 +591,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         if (codaOk) {
             val rk = RimeMap.extendKeySingle(ctx.rimeKey, c)
             if (RimeMap.isValidPrefixWithTone(rk, out.tone.index)) {
+                if (ctx.pendingUo) resolvePendingUo(out, ctx)
                 out.coda += c
                 ctx.rimeKey = rk
                 return 1
