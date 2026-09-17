@@ -548,6 +548,21 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     }
 
     /**
+     * Shared commit for a deferred fold: replaces the nucleus, records the fold
+     * anchor, and appends the coda — the tail all three tryCoda fold paths share.
+     */
+    private fun commitDeferredFold(
+        plainNuc: String, foldedNuc: String, foldKey: Char, foldCode: Int,
+        foldRawPos: Int, newCoda: String, out: SyllableState, ctx: ScanCtx
+    ) {
+        out.nucleus = foldedNuc
+        ctx.nucKey = RimeMap.rimeKey(out.nucleus)
+        ctx.fold.set(foldKey, RimeMap.foldPos(foldCode), foldRawPos, plainNucleus = plainNuc)
+        out.coda = newCoda
+        ctx.rimeKey = RimeMap.extendKey(ctx.nucKey, newCoda, 0, newCoda.length)
+    }
+
+    /**
      * Consonant → coda via the flat map; on rejection, deferred-fold lookahead may
      * pre-apply a fold that makes this coda valid (tuana → tuân, chuanra → chuẩn).
      * Returns chars consumed (1 literal / coda, 2 fold lookahead, 3 tone+fold), or
@@ -569,12 +584,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                     val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), nextChar)
                     val foldedNuc = RimeMap.foldCodaValid(out.nucleus, ctx.nucKey, nextChar, c, out.tone.index)
                     if (foldedNuc != null) {
-                        val plainNuc = out.nucleus
-                        out.nucleus = foldedNuc
-                        ctx.nucKey = RimeMap.rimeKey(out.nucleus)
-                        ctx.fold.set(nextChar, RimeMap.foldPos(foldCode), pos + 1, plainNucleus = plainNuc)
-                        out.coda += c
-                        ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
+                        commitDeferredFold(out.nucleus, foldedNuc, nextChar, foldCode, pos + 1, c.toString(), out, ctx)
                         return 2
                     }
                 }
@@ -587,12 +597,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                             val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
                             val foldedNuc = RimeMap.foldCodaValid(out.nucleus, ctx.nucKey, foldKey, c, targetTone.index)
                             if (foldedNuc != null) {
-                                val plainNuc = out.nucleus
-                                out.nucleus = foldedNuc
-                                ctx.nucKey = RimeMap.rimeKey(out.nucleus)
-                                ctx.fold.set(foldKey, RimeMap.foldPos(foldCode), pos + 2, plainNucleus = plainNuc)
-                                out.coda += c
-                                ctx.rimeKey = RimeMap.extendKeySingle(ctx.nucKey, c)
+                                commitDeferredFold(out.nucleus, foldedNuc, foldKey, foldCode, pos + 2, c.toString(), out, ctx)
                                 out.tone = targetTone
                                 ctx.lastToneKey = toneKey
                                 return 3
@@ -612,12 +617,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                             RimeMap.keyCat(foldedNuc, foldedNuc.length, extendedCoda, extendedCoda.length),
                             out.tone.index)
                     if (codaValid) {
-                        val plainNuc = out.nucleus
-                        out.nucleus = foldedNuc
-                        ctx.nucKey = RimeMap.rimeKey(out.nucleus)
-                        ctx.fold.set(foldKey, RimeMap.foldPos(foldCode), pos + 1, plainNucleus = plainNuc)
-                        out.coda = extendedCoda
-                        ctx.rimeKey = RimeMap.extendKey(ctx.nucKey, out.coda, 0, out.coda.length)
+                        commitDeferredFold(out.nucleus, foldedNuc, foldKey, foldCode, pos + 1, extendedCoda, out, ctx)
                         if (pos + 2 < len && RimeMap.isToneKey(raw[pos + 2].lowercaseChar())) {
                             val targetTone = Tone.fromKey(raw[pos + 2].lowercaseChar())
                             if (targetTone != null && targetTone != Tone.NONE) {
@@ -629,7 +629,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                         return 2
                     }
                 }
-
             }
         }
         lockLiteral(out, ctx, c)
