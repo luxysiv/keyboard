@@ -548,25 +548,10 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     }
 
     /**
-     * Shared commit for a deferred fold: replaces the nucleus, records the fold
-     * anchor, and appends the coda — the tail all three tryCoda fold paths share.
-     */
-    private fun commitDeferredFold(
-        plainNuc: String, foldedNuc: String, foldKey: Char, foldCode: Int,
-        foldRawPos: Int, newCoda: String, out: SyllableState, ctx: ScanCtx
-    ) {
-        out.nucleus = foldedNuc
-        ctx.nucKey = RimeMap.rimeKey(out.nucleus)
-        ctx.fold.set(foldKey, RimeMap.foldPos(foldCode), foldRawPos, plainNucleus = plainNuc)
-        out.coda = newCoda
-        ctx.rimeKey = RimeMap.extendKey(ctx.nucKey, newCoda, 0, newCoda.length)
-    }
-
-    /**
-     * Consonant → coda via the flat map; on rejection, deferred-fold lookahead may
-     * pre-apply a fold that makes this coda valid (tuana → tuân, chuanra → chuẩn).
-     * Returns chars consumed (1 literal / coda, 2 fold lookahead, 3 tone+fold), or
-     * 0 when the caller's guard didn't match (rare — handled by literal fallback).
+     * Consonant → coda via the flat map.  The fold keys that follow (e.g. the
+     * double-a in tuana) are folded by the later modifier pass, so no lookahead
+     * is needed here: the rime keys are resolved in gõ order (tuana → tuân).
+     * Returns 1 when the coda is valid (or becomes literal), 0 on caller guard.
      */
     private fun tryCoda(raw: CharSequence, c: Char, cLow: Char, pos: Int, len: Int, out: SyllableState, ctx: ScanCtx): Int {
         val codaLen = out.coda.length
@@ -577,58 +562,6 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
                 out.coda += c
                 ctx.rimeKey = rk
                 return 1
-            }
-            if (out.coda.isEmpty() && pos + 1 < len) {
-                val nextChar = raw[pos + 1].lowercaseChar()
-                if (RimeMap.isFoldKey(nextChar)) {
-                    val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), nextChar)
-                    val foldedNuc = RimeMap.foldCodaValid(out.nucleus, ctx.nucKey, nextChar, c, out.tone.index)
-                    if (foldedNuc != null) {
-                        commitDeferredFold(out.nucleus, foldedNuc, nextChar, foldCode, pos + 1, c.toString(), out, ctx)
-                        return 2
-                    }
-                }
-                if (!ctx.syllableLocked && pos + 2 < len && RimeMap.isToneKey(raw[pos + 1].lowercaseChar())) {
-                    val toneKey = raw[pos + 1].lowercaseChar()
-                    val foldKey = raw[pos + 2].lowercaseChar()
-                    if (RimeMap.isFoldKey(foldKey)) {
-                        val targetTone = Tone.fromKey(toneKey)
-                        if (targetTone != null && targetTone != Tone.NONE) {
-                            val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
-                            val foldedNuc = RimeMap.foldCodaValid(out.nucleus, ctx.nucKey, foldKey, c, targetTone.index)
-                            if (foldedNuc != null) {
-                                commitDeferredFold(out.nucleus, foldedNuc, foldKey, foldCode, pos + 2, c.toString(), out, ctx)
-                                out.tone = targetTone
-                                ctx.lastToneKey = toneKey
-                                return 3
-                            }
-                        }
-                    }
-                }
-            }
-            if (!ctx.syllableLocked && out.coda.isNotEmpty() && pos + 1 < len) {
-                val foldKey = raw[pos + 1].lowercaseChar()
-                if (RimeMap.isFoldKey(foldKey)) {
-                    val extendedCoda = out.coda + c
-                    val foldCode = RimeMap.foldPrimaryAtSlot(RimeMap.foldSlot(ctx.nucKey), foldKey)
-                    val foldedNuc = RimeMap.applyFold(out.nucleus, foldCode)
-                    val codaValid = foldCode != 0 && foldedNuc != out.nucleus &&
-                        RimeMap.isValidPrefixWithTone(
-                            RimeMap.keyCat(foldedNuc, foldedNuc.length, extendedCoda, extendedCoda.length),
-                            out.tone.index)
-                    if (codaValid) {
-                        commitDeferredFold(out.nucleus, foldedNuc, foldKey, foldCode, pos + 1, extendedCoda, out, ctx)
-                        if (pos + 2 < len && RimeMap.isToneKey(raw[pos + 2].lowercaseChar())) {
-                            val targetTone = Tone.fromKey(raw[pos + 2].lowercaseChar())
-                            if (targetTone != null && targetTone != Tone.NONE) {
-                                out.tone = targetTone
-                                ctx.lastToneKey = raw[pos + 2].lowercaseChar()
-                                return 3
-                            }
-                        }
-                        return 2
-                    }
-                }
             }
         }
         lockLiteral(out, ctx, c)

@@ -469,6 +469,18 @@ class VietnameseComposerTest {
     }
 
     @Test
+    fun testFoldAfterCodaNeedsNoLookahead() {
+        // Order-free folding is handled by the main pass: a fold key typed after
+        // the coda folds the spread nucleus in place (tuana → tuân), so the old
+        // deferred-fold lookahead in tryCoda is unnecessary.
+        assertEquals("tuân", engine.process("tuaan"))
+        assertEquals("tuân", engine.process("tuana"))
+        assertEquals("chuẩn", engine.process("chuaanr"))
+        assertEquals("chuẩn", engine.process("churana"))
+        assertEquals("chuẩn", engine.process("chuanra"))
+    }
+
+    @Test
     fun testWTransformAndDualRole() {
         assertEquals("ư", engine.process("w"))
         assertEquals("w", engine.process("ww"))
