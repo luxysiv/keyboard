@@ -38,8 +38,8 @@ class HarnessReferenceTest {
 
     private fun assertBoth(keys: String, engineExpected: String, refExpected: String, note: String) {
         val (edisp, rdisp) = combined(keys)
-        assertEquals(refExpected, rdisp, "reference deviates for \"$keys\" | $note")
-        assertEquals(engineExpected, edisp, "engine deviates for \"$keys\" | $note")
+        assertEquals("reference deviates for \"$keys\" | $note", refExpected, rdisp)
+        assertEquals("engine deviates for \"$keys\" | $note", engineExpected, edisp)
     }
 
     /** Compare both; collect and print divergence, never fails (diagnostic). */
