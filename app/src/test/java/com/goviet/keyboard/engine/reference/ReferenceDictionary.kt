@@ -18,6 +18,7 @@ class ReferenceDictionary private constructor(
         val rimeBase: String,
         val toneKeys: List<Char>,
         val foldKeys: List<Char>,
+        val rimeFoldKeys: Set<Char>, // fold keys the RIME needs (no onset đ)
         val tonedCharIndex: Int, // index in display where toned char lives
     )
 
@@ -28,6 +29,9 @@ class ReferenceDictionary private constructor(
         if (rime.isEmpty()) return true
         return rime in rimePrefixes
     }
+
+    /** True if [rime] is a prefix of some real rime base. */
+    fun hasRimePrefix(rime: String): Boolean = rime in rimePrefixes
 
     /** True if some real syllable with base [fullBase] supports tone key [toneKey]. */
     fun toneExists(fullBase: String, toneKey: Char): Boolean =
@@ -82,6 +86,13 @@ class ReferenceDictionary private constructor(
 
         fun toneStrip(s: String): String = s.map { tonedToBase[it] ?: it }.joinToString("")
 
+        private val foldToPlain = mapOf(
+            'â' to 'a', 'ă' to 'a', 'ê' to 'e', 'ô' to 'o', 'ơ' to 'o', 'ư' to 'u', 'đ' to 'd'
+        )
+
+        /** Revert every fold mark of a nucleus to its plain letter ("ươ" -> "uo"). */
+        fun unfoldToBase(s: String): String = s.map { foldToPlain[it] ?: it }.joinToString("")
+
         fun toneKeysOf(s: String): List<Char> =
             s.mapNotNull { tonedCharToToneKey[it] }.distinct().sorted()
 
@@ -121,9 +132,10 @@ class ReferenceDictionary private constructor(
                 val rimeBase = base.substring(onset.length)
                 val toneKeys = toneKeysOf(s)
                 val foldKeys = foldKeysOf(s)
+                val rimeFoldKeys = foldKeysOf(rimeBase).toSet()
                 // index of the character that actually carries a TONE mark (-1 when none)
                 val tonedIdx = display.indices.firstOrNull { display[it] in tonedToBase } ?: -1
-                Entry(display, base, onset, rimeBase, toneKeys, foldKeys, tonedIdx)
+                Entry(display, base, onset, rimeBase, toneKeys, foldKeys, rimeFoldKeys, tonedIdx)
             }
 
             val byBase = all.groupBy { it.base }

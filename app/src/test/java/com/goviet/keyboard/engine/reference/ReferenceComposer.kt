@@ -5,19 +5,26 @@ package com.goviet.keyboard.engine.reference
  *
  * Deliberately different architecture from the engine under test:
  *  - never reads RimeMap / OnsetMap / FoldAnchor;
- *  - every structural decision (fold applicability, tone position) is checked
- *    against a real dictionary of Vietnamese syllables;
+ *  - the keystroke walk is structural (phonotactic, no rime tables);
+ *  - validity and spelling are decided against a real dictionary of Vietnamese
+ *    syllables ([ReferenceDictionary]); the longest still-valid prefix wins
+ *    the syllable span and its literal display is rendered as-is;
+ *  - a dictionary entry only matches when every fold mark it needs was actually
+ *    produced by a typed fold key ("tuong" stays raw, "tuwowng" is "tương");
  *  - recomputes the display from the raw keystroke log on every key.
  *
  * Spec interpretation:
- *  - order-free keystrokes ("tuana" -> "tuân");
- *  - a repeated modifier key completes one cycle: revert to plain form and add
- *    the key as a literal ("aanww" -> "anw", "aww" -> "aw", "uoww" -> "uow",
- *    "tôis" -> "tôis");
- *  - a plain vowel after a coda starts a new syllable unless it can fold the
- *    current nucleus into a real rime ("khoan"+"a" stays "khoana", but the
- *    fold key that creates "tuân" is still accepted after the coda);
- *  - tone/fold keys that do not fit stay literal.
+ *  - order-free keystrokes, the fold key may come after the coda
+ *    ("tuana" -> "tuân");
+ *  - one Telex cycle per plain letter: repeating a fold key folds the next
+ *    plain target if one exists, otherwise closes the cycle by reverting the
+ *    nucleus to its plain form and keeping the key literal
+ *    ("aanww" -> "anw", "uoww" -> "uow");
+ *  - a plain vowel after a coda still folds the nucleus when that lands on a
+ *    real syllable ("tuana" -> "tuân"), otherwise it starts a new syllable
+ *    ("khoan" + "a");
+ *  - when no real Vietnamese syllable covers the keystrokes, the raw text is
+ *    echoed verbatim (Phần 3 of the spec).
  */
 class ReferenceComposer(private val dict: ReferenceDictionary) {
 
@@ -40,95 +47,126 @@ class ReferenceComposer(private val dict: ReferenceDictionary) {
             if (c == ' ') {
                 out.append(' ')
                 i++
-                continue
-            }
-            val syl = parseSyllable(raw, i)
-            if (syl !== null) {
-                out.append(syl.render())
-                i = syl.next
             } else {
-                out.append(c)
-                i++
+                val syl = parseSyllable(raw, i)
+                if (syl !== null) {
+                    out.append(syl.text)
+                    i = syl.next
+                } else {
+                    out.append(c)
+                    i++
+                }
             }
         }
         return out.toString()
     }
 
-    private class Sil(
-        val onset: String,
-        val nucleus: String,     // base nucleus with fold marks
-        val coda: String,
-        val tone: Char?,          // applied tone key
-        val literalTail: String,
-        val next: Int
-    ) {
-        fun render(): String {
-            val marked = if (tone == null) nucleus else applyToneToPos(nucleus, pos)
-            return onset + marked + coda + literalTail
-        }
-        var pos: Int = 0
-        private val base = ReferenceDictionary.toneStrip(nucleus) + coda
+    private class Sil(val text: String, val next: Int)
 
-        private fun applyToneToPos(nuc: String, position: Int): String {
-            if (position < 0 || position >= nuc.length) return nuc
-            val c = nuc[position]
-            val toned = ReferenceDictionary.baseToTone[c]?.get(tone) ?: return nuc
-            return nuc.substring(0, position) + toned + nuc.substring(position + 1)
+    /** Real dictionary entry compatible with the current state and keystrokes. */
+    private fun matchEntry(
+        onset: StringBuilder,
+        nuc: String,
+        coda: String,
+        tone: Char?,
+        foldSeen: Set<Char>
+    ): ReferenceDictionary.Entry? {
+        val full = onset.toString() + ReferenceDictionary.toneStrip(nuc) + coda
+        val qualified = dict.entriesWithBase(full).filter { e ->
+            e.rimeFoldKeys.all { it in foldSeen }
+        }
+        if (qualified.isEmpty()) return null
+        return when {
+            tone == null -> qualified.firstOrNull { it.toneKeys.isEmpty() } ?: qualified.first()
+            else -> qualified.firstOrNull { it.toneKeys.contains(tone) }
         }
     }
 
-    /** Greedy single-syllable parse; null when no vowel rime can start. */
+    /**
+     * Greedy structural walk. Every prefix that matches a real dictionary
+     * syllable becomes the running best candidate; the last such prefix is
+     * returned. A cycled (spec-mandated) state always wins. Null when no
+     * consonant+rime can even start.
+     */
     private fun parseSyllable(raw: CharSequence, start: Int): Sil? {
-        val onset = StringBuilder()
+        var onset = StringBuilder()
         var nuc = ""
         var coda = ""
         var tone: Char? = null
         var lit = ""
-        val foldSeen = HashSet<Char>()
+        var foldSeen = HashSet<Char>()
+        var cycleActive = false
         var i = start
+        var best: Sil? = null
+
+        fun snapshot(next: Int, force: Boolean = false) {
+            if (force) {
+                best = Sil(onset.toString() + nuc + coda + lit, next)
+                return
+            }
+            val entry = matchEntry(onset, nuc, coda, tone, foldSeen)
+            if (entry !== null) {
+                best = Sil(entry.display + lit, next)
+            }
+        }
+
+        fun cycleClose(c: Char) {
+            nuc = ReferenceDictionary.unfoldToBase(nuc)
+            lit += c
+            cycleActive = true
+            snapshot(i + 1, force = true)
+            i++
+        }
 
         while (i < raw.length) {
             val c = raw[i]
             if (c == ' ') break
 
             if (nuc.isEmpty()) {
-                if (isVowel(c)) {
-                    if (dict.rimePrefixOk(c.toString())) {
-                        nuc = c.toString()
+                if (c == 'w') {
+                    if (dict.hasRimePrefix("ư")) {
+                        nuc = "ư"
+                        foldSeen.add('w')
+                        snapshot(i + 1)
                         i++
-                    } else {
-                        break
+                        continue
                     }
-                    continue
-                }
-                if (isToneKey(c)) {
                     lit += c
                     i++
                     continue
                 }
-                if (c == 'w' || c == 'd') {
-                    if (c == 'd' && onset.toString() == "d") {
-                        onset.setLength(0)
-                        onset.append('đ')
-                        i++
-                        continue
+                if (c == 'd') {
+                    when {
+                        onset.isEmpty() -> onset.append('d')
+                        onset.length == 1 && onset[0] == 'd' -> {
+                            onset.setLength(0)
+                            onset.append('đ')
+                        }
+                        else -> break
                     }
-                    if (c == 'd') {
-                        onset.append('d')
-                        i++
-                        continue
-                    }
-                    // 'w' cannot open a syllable on its own
-                    lit += c
                     i++
                     continue
                 }
                 if (isConsonant(c)) {
-                    if (onset.length >= 2) {
-                        // already two letters and no vowel: not a syllable
+                    val two = onset.toString()
+                    if (two == "ng" && c == 'h') {
+                        onset.append('h')
+                    } else if (onset.length >= 2) {
                         break
+                    } else {
+                        onset.append(c)
                     }
-                    onset.append(c)
+                    i++
+                    continue
+                }
+                if (isVowel(c)) {
+                    nuc = c.toString()
+                    snapshot(i + 1)
+                    i++
+                    continue
+                }
+                if (isToneKey(c)) {
+                    lit += c
                     i++
                     continue
                 }
@@ -137,89 +175,83 @@ class ReferenceComposer(private val dict: ReferenceDictionary) {
                 continue
             }
 
-            // nucleus is open
             when {
                 isToneKey(c) -> {
                     when {
-                        tone == c -> { tone = null; lit += c }
-                        tone == null -> {
-                            val fullBase = onset.toString() + ReferenceDictionary.toneStrip(nuc) + coda
-                            if (dict.toneExists(fullBase, c)) tone = c else lit += c
+                        tone == c -> {
+                            tone = null
+                            lit += c
+                            cycleActive = true
+                            snapshot(i + 1, force = true)
+                        }
+                        tone == null && hasVowel(nuc) -> {
+                            tone = c
+                            snapshot(i + 1)
                         }
                         else -> lit += c
                     }
                     i++
                 }
-                c == 'w' || c == 'd' -> {
-                    if (c == 'w') {
-                        if (foldSeen.contains('w')) {
-                            nuc = ReferenceDictionary.toneStrip(nuc)
-                            lit += c
-                        } else {
-                            val folded = foldW(nuc)
-                            if (folded != null && dict.rimePrefixOk(folded + coda)) {
-                                nuc = folded
-                                foldSeen.add('w')
-                            } else {
-                                lit += c
-                            }
+                c == 'w' -> {
+                    val folded = foldW(nuc)
+                    when {
+                        folded === null && foldSeen.contains('w') -> cycleClose(c)
+                        folded === null -> { lit += c; i++ }
+                        else -> {
+                            nuc = folded
+                            foldSeen.add('w')
+                            snapshot(i + 1)
+                            i++
                         }
-                    } else {
-                        // 'd' after a vowel: not part of a rime
-                        lit += c
                     }
-                    i++
                 }
                 isVowel(c) && (c == 'a' || c == 'e' || c == 'o') -> {
-                    // this letter may act as a fold key on an existing nucleus char
-                    val target = when (c) {
-                        'a' -> if (nuc.contains('a')) 'a' else if (nuc.contains('ă')) 'ă' else null
-                        'e' -> if (nuc.contains('e')) 'e' else null
-                        else -> if (nuc.contains('o')) 'o' else null
-                    }
-                    if (target != null) {
+                    val folded = foldLetter(nuc, c)
+                    if (folded !== null) {
                         if (foldSeen.contains(c)) {
-                            // cycle: revert to plain + literal
-                            nuc = ReferenceDictionary.toneStrip(nuc)
-                            lit += c
-                            i++
-                            continue
-                        }
-                        val folded = foldLetter(nuc, c)
-                        if (folded != null && dict.rimePrefixOk(folded + coda)) {
                             nuc = folded
-                            foldSeen.add(c)
+                            if (matchEntry(onset, nuc, coda, tone, foldSeen) !== null) {
+                                snapshot(i + 1)
+                                i++
+                                continue
+                            }
+                            nuc = ReferenceDictionary.unfoldToBase(nuc)
+                            lit += c
+                            cycleActive = true
+                            snapshot(i + 1, force = true)
                             i++
                             continue
                         }
+                        nuc = folded
+                        foldSeen.add(c)
+                        snapshot(i + 1)
+                        i++
+                        continue
                     }
+                    if (foldSeen.contains(c)) {
+                        cycleClose(c)
+                        continue
+                    }
+                    if (coda.isNotEmpty()) {
+                        break // no fold possible after coda: new syllable
+                    }
+                    nuc += c
+                    snapshot(i + 1)
+                    i++
+                }
+                isVowel(c) -> {
                     if (coda.isEmpty()) {
-                        if (dict.rimePrefixOk(nuc + c + coda)) {
-                            nuc += c
-                            i++
-                        } else {
-                            // no way: literal (or new syllable if after coda)
-                            if (coda.isNotEmpty()) break
-                            lit += c
-                            i++
-                        }
+                        nuc += c
+                        snapshot(i + 1)
+                        i++
                     } else {
-                        // vowel after coda: new syllable
                         break
                     }
                 }
-                isVowel(c) -> {
-                    // plain vowel (i/u/y and the plain side of a/e/o already tried)
-                    if (coda.isEmpty()) {
-                        if (dict.rimePrefixOk(nuc + c)) {
-                            nuc += c
-                            i++
-                        } else lit += c.also { i++ }
-                    } else break // new syllable
-                }
                 isConsonant(c) -> {
-                    if (dict.rimePrefixOk(nuc + coda + c)) {
+                    if (isCodaChar(c)) {
                         coda += c
+                        snapshot(i + 1)
                         i++
                     } else {
                         break
@@ -227,39 +259,67 @@ class ReferenceComposer(private val dict: ReferenceDictionary) {
                 }
                 else -> { lit += c; i++ }
             }
+
+            if (cycleActive) break
         }
 
-        if (nuc.isEmpty()) return null
-        val finalSil = Sil(onset.toString(), nuc, coda, tone, lit, i)
-        finalSil.pos = tonePosition(onset.toString(), nuc, coda, tone, dict)
-        return finalSil
+        return best
     }
+
+    private fun hasVowel(nuc: String): Boolean =
+        nuc.any { it == 'a' || it == 'ă' || it == 'â' || it == 'e' || it == 'ê' ||
+                  it == 'i' || it == 'y' || it == 'o' || it == 'ô' || it == 'ơ' ||
+                  it == 'u' || it == 'ư' }
 
     private fun foldLetter(nuc: String, key: Char): String? {
         val base = ReferenceDictionary.toneStrip(nuc)
         return when (key) {
-            'a' -> replaceFirst(base, 'a', 'â') ?: replaceFirst(base, 'ă', 'â')
-            'e' -> replaceFirst(base, 'e', 'ê')
-            'o' -> replaceFirst(base, 'o', 'ô')
+            'a' -> replaceFirst(base, "a", "â") ?: replaceFirst(base, "ă", "â")
+            'e' -> replaceFirst(base, "e", "ê")
+            'o' -> firstFoldO(base)
             else -> null
         }
     }
 
-    private fun foldW(base: String): String? {
-        if (base.contains("uo")) {
-            val i = base.indexOf("uo")
-            return base.replaceRange(i, i + 2, "ươ")
-        }
-        for ((from, to) in listOf("ô" to "ơ", "â" to "ă", "a" to "ă", "o" to "ơ", "u" to "ư")) {
-            val i = base.indexOf(from)
-            if (i >= 0) return base.replaceRange(i, i + 1, to)
+    private fun firstFoldO(base: String): String? {
+        for (i in base.indices) {
+            if (base[i] == 'o') return base.replaceRange(i, i + 1, "ô")
+            if (base[i] == 'ơ' && !(i > 0 && base[i - 1] == 'u')) {
+                return base.replaceRange(i, i + 1, "ô")
+            }
         }
         return null
     }
 
-    private fun replaceFirst(s: String, from: Char, to: Char): String? {
-        val i = s.indexOf(from)
-        return if (i >= 0) s.replaceRange(i, i + 1, to.toString()) else null
+    private fun foldW(base: String): String? {
+        val uo = base.indexOf("uo")
+        if (uo >= 0) return base.replaceRange(uo, uo + 2, "ươ")
+        val uoHorn = base.indexOf("uô")
+        if (uoHorn >= 0) return base.replaceRange(uoHorn, uoHorn + 2, "ươ")
+        if (base.contains("ươ")) return null
+        val ua = base.indexOf("ua")
+        if (ua >= 0) return base.replaceRange(ua, ua + 1, "ư")
+        val oa = base.indexOf("oa")
+        if (oa >= 0) return base.replaceRange(oa + 1, oa + 2, "ă")
+        for (i in base.indices) {
+            if (base[i] == 'u') {
+                val next = i + 1
+                if (next < base.length && (base[next] == 'o' || base[next] == 'a')) break
+                return base.replaceRange(i, i + 1, "ư")
+            }
+        }
+        for (i in base.indices) {
+            if (base[i] == 'o' && !(i > 0 && base[i - 1] == 'u')) {
+                return base.replaceRange(i, i + 1, "ơ")
+            }
+        }
+        val hatA = base.indexOf('â')
+        if (hatA >= 0) return base.replaceRange(hatA, hatA + 1, "ă")
+        val hatO = base.indexOf('ô')
+        if (hatO >= 0) return base.replaceRange(hatO, hatO + 1, "ơ")
+        val a = base.indexOf('a')
+        if (a >= 0) return base.replaceRange(a, a + 1, "ă")
+        return null
     }
 
     private fun replaceFirst(s: String, from: String, to: String): String? {
@@ -267,19 +327,7 @@ class ReferenceComposer(private val dict: ReferenceDictionary) {
         return if (i >= 0) s.replaceRange(i, i + from.length, to) else null
     }
 
-    /** Tone position index inside the nucleus (coda excluded). */
-    private fun tonePosition(onset: String, nuc: String, coda: String, tone: Char?, dict: ReferenceDictionary): Int {
-        if (tone == null) return 0
-        val fullBase = onset + ReferenceDictionary.toneStrip(nuc) + coda
-        val candidates = dict.entriesWithBase(fullBase).filter { it.toneKeys.contains(tone) }
-        for (e in candidates) {
-            val rimeIdx = e.tonedCharIndex - e.onset.length
-            if (rimeIdx >= 0 && rimeIdx < nuc.length) return rimeIdx
-        }
-        // fallback: last vowel of the nucleus (with coda) else first vowel
-        return if (coda.isEmpty()) 0 else nuc.length - 1
-    }
-
+    private fun isCodaChar(c: Char) = c == 'c' || c == 'h' || c == 'g' || c == 'm' || c == 'n' || c == 'p' || c == 't'
     private fun isToneKey(c: Char) = c == 's' || c == 'f' || c == 'r' || c == 'x' || c == 'j'
     private fun isVowel(c: Char) = c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u' || c == 'y'
     private fun isConsonant(c: Char) =
