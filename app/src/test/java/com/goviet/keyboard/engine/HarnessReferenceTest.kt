@@ -3,8 +3,8 @@ package com.goviet.keyboard.engine
 import com.goviet.keyboard.engine.reference.ReferenceComposer
 import com.goviet.keyboard.engine.reference.ReferenceDictionary
 import org.junit.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 
 /**
  * Comparison harness: drives the production [VietnameseComposer] and the
@@ -31,7 +31,7 @@ class HarnessReferenceTest {
         var rdisp = ""
         val r = ReferenceComposer(dict)
         for (c in keys) {
-            edisp = e.processKey(c).text
+            edisp = e.processKey(c).text.toString()
             rdisp = r.processKey(c)
         }
         return Pair(edisp, rdisp)
