@@ -77,7 +77,7 @@ class ReferenceComposer(private val dict: ReferenceDictionary) {
         }
         if (qualified.isEmpty()) return null
         return when {
-            tone == null -> qualified.firstOrNull { it.toneKeys.isEmpty() } ?: qualified.first()
+            tone == null -> qualified.firstOrNull { it.toneKeys.isEmpty() }
             else -> qualified.firstOrNull { it.toneKeys.contains(tone) }
         }
     }
