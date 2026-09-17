@@ -111,7 +111,7 @@ class ReferenceDictionary private constructor(
 
         private val onsets = listOf(
             "ngh", "ch", "gh", "gi", "kh", "nh", "ng", "ph", "qu", "th", "tr",
-            "b", "c", "d", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x"
+            "b", "c", "d", "đ", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "x"
         )
 
         fun longestOnset(base: String): String =
