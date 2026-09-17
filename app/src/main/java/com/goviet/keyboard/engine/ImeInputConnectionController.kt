@@ -680,12 +680,10 @@ class ImeInputConnectionController(
                         inputEngine.insertComposingKey(composingCursorIndex, actualKey[0])
                         composingCursorIndex += actualKey.length
 
-                        val casedDisplay: String
-                        if (inputEngine.composeAsVietnamese) {
-                            inputEngine.toCasedDisplayBuffer(displayBuf)
-                            casedDisplay = displayBuf.toStringVal()
+                        val casedDisplay = if (inputEngine.composeAsVietnamese) {
+                            inputEngine.toDisplayString()
                         } else {
-                            casedDisplay = compileRawDisplay()
+                            compileRawDisplay()
                         }
 
                         updateComposingUI(ic, lastLen, casedDisplay)
@@ -763,8 +761,8 @@ class ImeInputConnectionController(
      */
     fun compileRawDisplay(): String {
         if (!inputEngine.isComposing()) return ""
-        inputEngine.toCasedDisplayBuffer(displayBuf)
-        return displayBuf.toStringVal()
+        inputEngine.toDisplayBuffer(displayBuf)
+        return VietnameseUnicode.applyCasingFromRaw(displayBuf, inputEngine.composingRaw())
     }
 
     /** Display caret offset (chars) for the current raw caret — zero-alloc. */
@@ -808,8 +806,7 @@ class ImeInputConnectionController(
     fun compileText(raw: String): String {
         if (raw.isEmpty()) return ""
         inputEngine.compileRawInto(raw, vietnamese = true, displayBuf)
-        displayBuf.applyCasingFromRaw(raw)
-        return displayBuf.toStringVal()
+        return VietnameseUnicode.applyCasingFromRaw(displayBuf, raw)
     }
 
     private fun tryExpandMacro(raw: String, wordBreak: String): String? {

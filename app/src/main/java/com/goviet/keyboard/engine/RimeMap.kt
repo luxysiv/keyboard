@@ -389,9 +389,7 @@ object RimeMap {
         return ((baseLen + extLen) shl 25) or chars
     }
 
-
-
-        private const val NO_FOLD_CHAR = 31
+    private const val NO_FOLD_CHAR = 31
     private val CHAR_AT = RIME_ALPHA.toCharArray()
 
     /** Pack a single-char fold replacement at [pos1]. */
@@ -634,11 +632,6 @@ object RimeMap {
     fun isRimeValidForTone(rime: String, tone: Tone): Boolean {
         if (rime.isEmpty()) return false
         return isValidPrefixWithTone(rimeKey(rime), tone.index)
-    }
-
-    fun isRimeValidForTone(rime: CharSequence, start: Int, length: Int, tone: Tone): Boolean {
-        if (length <= 0) return false
-        return isValidPrefixWithTone(rimeKey(rime, start, length), tone.index)
     }
 
     /** Validate that a rime (by precomputed flat-table key) is valid for a specific tone. */

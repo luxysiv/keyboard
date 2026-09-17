@@ -80,65 +80,6 @@ class OwnedBuffer : CharSequence {
 
     override fun toString(): String = toStringVal()
 
-
-    /**
-     * Apply Vietnamese casing in-place: reads [raw] for case flags,
-     * transforms the receiver's chars directly.  Single String allocation
-     * only at the end via [toStringVal] — the IME caller owns the
-     * conversion to InputConnection.setComposingText.
-     */
-    fun applyCasingFromRaw(raw: CharSequence) {
-        if (len == 0 || raw.length == 0) return
-
-        var hasUpperInRaw = false
-        var isAllUpper = true
-        val rawLen = raw.length
-        for (i in 0 until rawLen) {
-            val c = raw[i]
-            val isLtr = c in 'a'..'z' || c in 'A'..'Z' || c.lowercaseChar() != c.uppercaseChar()
-            if (isLtr) {
-                if (c.isUpperCase()) hasUpperInRaw = true
-                else isAllUpper = false
-            }
-        }
-
-        if (!hasUpperInRaw) {
-            for (i in 0 until len) chars[i] = chars[i].lowercaseChar()
-            return
-        }
-
-        if (isAllUpper) {
-            for (i in 0 until len) chars[i] = chars[i].uppercaseChar()
-            return
-        }
-
-        val isFirstUpper = raw[0].isUpperCase()
-        var rawIdx = 0
-        var outIdx = 0
-        while (outIdx < len) {
-            val char = chars[outIdx]
-            val baseCompiled = VietnameseUnicode.getBaseChar(char)
-            var matchedChar: Char? = null
-            var tempIdx = rawIdx
-            while (tempIdx < rawLen) {
-                val rawChar = raw[tempIdx]
-                if (VietnameseUnicode.getBaseChar(rawChar) == baseCompiled) {
-                    matchedChar = rawChar
-                    rawIdx = tempIdx + 1
-                    break
-                }
-                tempIdx++
-            }
-            chars[outIdx] = when {
-                matchedChar != null && matchedChar.isUpperCase() -> char.uppercaseChar()
-                matchedChar == null && isFirstUpper && outIdx == 0 -> char.uppercaseChar()
-                matchedChar == null -> char.lowercaseChar()
-                else -> char.lowercaseChar()
-            }
-            outIdx++
-        }
-    }
-
     private fun ensureCapacity(minCapacity: Int) {
         if (minCapacity <= chars.size) return
         var newSize = chars.size * 2
