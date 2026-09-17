@@ -63,23 +63,50 @@ class ReferenceComposer(private val dict: ReferenceDictionary) {
 
     private class Sil(val text: String, val next: Int)
 
-    /** Real dictionary entry compatible with the current state and keystrokes. */
+    /**
+     * Real dictionary syllable compatible with the current state and keystrokes.
+     *
+     * Tone resolution: a tone key only lands on a dictionary-approved base
+     * spelling. When no dictionary entry carries that exact tone mark (e.g.
+     * "ngươi" maps to a sắc "ngưới" the word list omits), the tone is still
+     * composed by rule (Telex always produces the toned letter). When the base
+     * spelling itself has no ngang entry, null forces the raw echo.
+     */
     private fun matchEntry(
         onset: StringBuilder,
         nuc: String,
         coda: String,
         tone: Char?,
         foldSeen: Set<Char>
-    ): ReferenceDictionary.Entry? {
+    ): String? {
         val full = onset.toString() + ReferenceDictionary.toneStrip(nuc) + coda
         val qualified = dict.entriesWithBase(full).filter { e ->
             e.rimeFoldKeys.all { it in foldSeen }
         }
         if (qualified.isEmpty()) return null
-        return when {
-            tone == null -> qualified.firstOrNull { it.toneKeys.isEmpty() }
-            else -> qualified.firstOrNull { it.toneKeys.contains(tone) }
+        if (tone == null) return qualified.firstOrNull { it.toneKeys.isEmpty() }?.display
+        qualified.firstOrNull { it.toneKeys.contains(tone) }?.let { return it.display }
+        return tonePlace(qualified.first().display, tone)
+    }
+
+    /** Apply the Telex tone key to the given vowel string by rule ("ngươi"+s -> "ngưới"). */
+    private fun tonePlace(display: String, tone: Char): String? {
+        var idx = -1
+        for (i in display.indices) {
+            if (display[i] in "aăâeêioôơuưy") idx = i
         }
+        if (idx < 0) return null
+        if (idx > 0 && display[idx] in "yiuo") {
+            for (j in idx - 1 downTo 0) {
+                if (display[j] in "aăâeêioôơuưy") {
+                    idx = j
+                    break
+                }
+            }
+        }
+        val table = ReferenceDictionary.baseToTone[display[idx]] ?: return null
+        val c = table[tone] ?: return null
+        return display.substring(0, idx) + c + display.substring(idx + 1)
     }
 
     /**
@@ -104,9 +131,9 @@ class ReferenceComposer(private val dict: ReferenceDictionary) {
                 best = Sil(onset.toString() + nuc + coda + lit, next)
                 return
             }
-            val entry = matchEntry(onset, nuc, coda, tone, foldSeen)
-            if (entry !== null) {
-                best = Sil(entry.display + lit, next)
+            val display = matchEntry(onset, nuc, coda, tone, foldSeen)
+            if (display !== null) {
+                best = Sil(display + lit, next)
             }
         }
 

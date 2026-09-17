@@ -47,13 +47,30 @@ class HarnessReferenceTest {
         try {
             val (edisp, rdisp) = combined(keys)
             if (edisp != rdisp) {
-                println("DIVERGE | \"$keys\" | engine=\"$edisp\" ref=\"$rdisp\" | $note")
-                mismatches.append("DIVERGE | \"$keys\" | engine=\"$edisp\" ref=\"$rdisp\" | $note\n")
+                val known = DECIDED_DIVERGENCES[keys]
+                val tag = if (known != null) "KNOWN-DECISION (%s)".format(known) else "UNRESOLVED"
+                println("DIVERGE | \"$keys\" | engine=\"$edisp\" ref=\"$rdisp\" | $note | $tag")
+                mismatches.append("DIVERGE | \"$keys\" | engine=\"$edisp\" ref=\"$rdisp\" | $note | $tag\n")
             }
         } catch (ex: Throwable) {
             println("ERROR   | \"$keys\" | ${ex.javaClass.simpleName}: ${ex.message}")
             mismatches.append("ERROR   | \"$keys\" | ${ex.javaClass.simpleName}: ${ex.message}\n")
         }
+    }
+
+    /**
+     * Documented engine-vs-reference divergences (triaged, intentionally left).
+     * Each entry is a decision: the reference implements the spec (dict-validated,
+     * order-free folds); the production engine may be stricter or narrower.
+     */
+    private companion object {
+        val DECIDED_DIVERGENCES = mapOf(
+            "tuwowng" to "engine does not fold alternate order uwow->ương (only uowng); ref = real word",
+            "huwowng" to "engine does not fold alternate order uwow->ương; ref = real word",
+            "chiocs" to "ref splits chi+óc; engine echoes (no full syllable chioc); ref free-split artifact",
+            "yenw" to "ref splits y+en+ư; engine echoes; ref free-split artifact",
+            "undefined" to "English input: ref splits un+dèined; engine echoes; ref free-split artifact"
+        )
     }
 
     @Test
