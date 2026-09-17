@@ -412,6 +412,18 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         lockLiteral(out, ctx, c)
     }
 
+    /** Letter that a repeated fold key unfolds back to — plain base of [nuc]. */
+    private fun unfoldToBase(nuc: String): String {
+        var changed = -1
+        for (i in nuc.indices) {
+            if (RimeMap.plainOf(nuc[i]) != nuc[i]) { changed = i; break }
+        }
+        if (changed < 0) return nuc
+        val sb = StringBuilder(nuc.length)
+        for (i in nuc.indices) sb.append(RimeMap.plainOf(nuc[i]))
+        return sb.toString()
+    }
+
     /**
      * 'w'-key handler — w-special rules live here (standalone w → ư when directW
      * is off); a repeated 'w' after an applied fold falls through to the shared
@@ -445,14 +457,15 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
     private fun applyModifierFold(raw: CharSequence, c: Char, cLow: Char, pos: Int, out: SyllableState, ctx: ScanCtx): Int {
         if (!ctx.syllableLocked && RimeMap.isFoldKey(cLow) && out.nucleus.isNotEmpty() && !ctx.justUntoggled) {
             if (ctx.fold.active && cLow == ctx.fold.key &&
-                pos == ctx.fold.rawPos + 1 &&
+                (pos == ctx.fold.rawPos + 1 ||
+                    (cLow == 'w' && out.coda.isNotEmpty() && pos > ctx.fold.rawPos)) &&
                 out.nucleus != ctx.fold.plainNucleus) {
                 if (ctx.fold.standalone) {
                     out.nucleus = ""
                     out.rawSuffix += c
                     ctx.syllableLocked = true
                 } else {
-                    out.nucleus = ctx.fold.plainNucleus
+                    out.nucleus = unfoldToBase(ctx.fold.plainNucleus)
                     if (out.coda.isNotEmpty()) {
                         out.rawSuffix += c
                         ctx.syllableLocked = true
