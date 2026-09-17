@@ -518,55 +518,50 @@ class ImeInputConnectionController(
      * ========================================================================= */
 
     fun resetComposingUI(ic: InputConnection, backspaceCountIfImmediate: Int = 0) {
-        ic.beginBatchEdit()
-        try {
-            selectionGuard.clear()
-            lastSetComposingText = null
-            inputEngine.reset()
-            if (isImmediateCommitMode()) {
-                if (backspaceCountIfImmediate > 0) {
-                    backspaceHandler.sendBackspaceEvents(ic, backspaceCountIfImmediate)
-                }
-            } else {
-                ic.setComposingText("", 1)
+        selectionGuard.clear()
+        lastSetComposingText = null
+        inputEngine.reset()
+        if (isImmediateCommitMode()) {
+            if (backspaceCountIfImmediate > 0) {
+                backspaceHandler.sendBackspaceEvents(ic, backspaceCountIfImmediate)
             }
-        } finally {
-            ic.endBatchEdit()
+        } else {
+            ic.setComposingText("", 1)
         }
     }
 
+    /**
+     * Rewrites the composing underline.  Runs exclusively inside [handleKeyPress]'s
+     * single beginBatchEdit, so it must NOT open its own batch — a nested
+     * beginBatchEdit/endBatchEdit pair costs two extra binder round-trips to the
+     * editor on every keystroke for zero atomicity gain.
+     */
     fun updateComposingUI(ic: InputConnection, lastLenIfImmediate: Int = 0, explicitCompiled: String? = null) {
-        ic.beginBatchEdit()
-        try {
-            val compiled = explicitCompiled ?: compileComposingText()
-            if (isImmediateCommitMode()) {
-                val lastStr = lastSetComposingText ?: ""
-                if (lastStr.isNotEmpty() && compiled.length == lastStr.length - 1 && lastStr.startsWith(compiled)) {
-                    backspaceHandler.sendBackspaceEvents(ic, 1)
-                } else if (lastLenIfImmediate > 0) {
-                    backspaceHandler.sendBackspaceEvents(ic, lastLenIfImmediate)
-                }
-                ic.commitText(compiled, 1)
-            } else {
-                if (compiled != lastSetComposingText) {
-                    ic.setComposingText(compiled, 1)
-                }
+        val compiled = explicitCompiled ?: compileComposingText()
+        if (isImmediateCommitMode()) {
+            val lastStr = lastSetComposingText ?: ""
+            if (lastStr.isNotEmpty() && compiled.length == lastStr.length - 1 && lastStr.startsWith(compiled)) {
+                backspaceHandler.sendBackspaceEvents(ic, 1)
+            } else if (lastLenIfImmediate > 0) {
+                backspaceHandler.sendBackspaceEvents(ic, lastLenIfImmediate)
             }
-            if (composingStartInEditor >= 0) {
-                if (composingCursorIndex != inputEngine.composingRawLength()) {
-                    moveCursorTo(ic, composingStartInEditor + displayCursorIndex())
-                } else {
-                    val displayCursor = compiled.length
-                    selectionGuard.register(composingStartInEditor + displayCursor)
-                }
+            ic.commitText(compiled, 1)
+        } else {
+            if (compiled != lastSetComposingText) {
+                ic.setComposingText(compiled, 1)
             }
-            if (!isImmediateCommitMode()) {
-                selectionGuard.markRecentRegion(composingStartInEditor, compiled.length)
-            }
-            lastSetComposingText = compiled
-        } finally {
-            ic.endBatchEdit()
         }
+        if (composingStartInEditor >= 0) {
+            if (composingCursorIndex != inputEngine.composingRawLength()) {
+                moveCursorTo(ic, composingStartInEditor + displayCursorIndex())
+            } else {
+                selectionGuard.register(composingStartInEditor + compiled.length)
+            }
+        }
+        if (!isImmediateCommitMode()) {
+            selectionGuard.markRecentRegion(composingStartInEditor, compiled.length)
+        }
+        lastSetComposingText = compiled
     }
 
     private fun handleBackspace(ic: InputConnection) {

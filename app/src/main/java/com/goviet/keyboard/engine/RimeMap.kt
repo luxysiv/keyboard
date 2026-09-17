@@ -646,11 +646,12 @@ object RimeMap {
     fun isRimeKeyValidForTone(key: Int, tone: Tone): Boolean =
         isValidPrefixWithTone(key, tone.index)
 
-    /** Determine tone position from a precomputed flat-table key — zero allocation. */
+    /** Determine tone position from a precomputed flat-table key — zero allocation.
+     *  Single probe: [indexOf] and the complete-flag test share the same slot. */
     @JvmStatic
     fun determineTonePosition(rimeKey: Int, oldTonePlacement: Boolean, nucleusLength: Int = 0): Int {
         val i = indexOf(rimeKey)
-        if (i < 0 || !isComplete(rimeKey)) return (nucleusLength - 1).coerceAtLeast(0)
+        if (i < 0 || (table.data[i].toInt() and 2) == 0) return (nucleusLength - 1).coerceAtLeast(0)
         return if (oldTonePlacement) toneOldAt(i) else toneNewAt(i)
     }
 
