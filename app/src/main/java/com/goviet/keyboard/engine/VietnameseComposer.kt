@@ -783,7 +783,7 @@ compileRawInto(raw, vietnamese, out, raw.length)
         var remainingAfterOnset = baseWord.substring(onsetLen)
 
         val nucleusEnd = scanNucleusEnd(remainingAfterOnset)
-        val nucleus = remainingAfterOnset.substring(0, nucleusEnd)
+        var nucleus = remainingAfterOnset.substring(0, nucleusEnd)
         var remainingAfterNucleus = remainingAfterOnset.substring(nucleusEnd)
         var remLower = remainingAfterNucleus.lowercase()
 
