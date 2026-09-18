@@ -150,7 +150,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
      * Generate deconstructed snapshots: adopt [word], replay keystroke by keystroke,
      * return (canonicalRaw, snapshots).
      */
-    fun generateDeconstructedSnapshots(word: String): Pair<String, List<Snapshot>> {
+    internal fun generateDeconstructedSnapshots(word: String): Pair<String, List<Snapshot>> {
         val adopt = adoptWord(word) ?: return Pair(word, listOf(Snapshot(word)))
         val canonical = canonicalRawIfRoundTrips(adopt, word) ?: adopt.canonicalRaw
         val snaps = mutableListOf<Snapshot>()
@@ -225,7 +225,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
 
     /** Test API: resegment [raw] into a fresh state (the resegment the kernel
      *  uses for every replay); mirrors [resegment] for display-level tests. */
-    fun replayRawToState(raw: CharSequence, out: SyllableState) {
+    internal fun replayRawToState(raw: CharSequence, out: SyllableState) {
         resegment(raw, out)
     }
 
@@ -782,7 +782,9 @@ compileRawInto(raw, vietnamese, out, raw.length)
         var onset = if (onsetLen > 0) baseWord.substring(0, onsetLen) else ""
         var remainingAfterOnset = baseWord.substring(onsetLen)
 
-        var (nucleus, remainingAfterNucleus) = scanNucleusAndRemainder(remainingAfterOnset)
+        val nucleusEnd = scanNucleusEnd(remainingAfterOnset)
+        val nucleus = remainingAfterOnset.substring(0, nucleusEnd)
+        var remainingAfterNucleus = remainingAfterOnset.substring(nucleusEnd)
         var remLower = remainingAfterNucleus.lowercase()
 
         if (nucleus.isEmpty() && RimeMap.isGiOnset(onset)) {
@@ -790,9 +792,9 @@ compileRawInto(raw, vietnamese, out, raw.length)
             if (OnsetMap.isCompleteOnset(shorterOnset.lowercase(), 0, shorterOnset.length)) {
                 onset = shorterOnset
                 remainingAfterOnset = baseWord.substring(onset.length)
-                val (nuc, remAfterNuc) = scanNucleusAndRemainder(remainingAfterOnset)
-                nucleus = nuc
-                remainingAfterNucleus = remAfterNuc
+                val nucEnd2 = scanNucleusEnd(remainingAfterOnset)
+                nucleus = remainingAfterOnset.substring(0, nucEnd2)
+                remainingAfterNucleus = remainingAfterOnset.substring(nucEnd2)
                 remLower = remainingAfterNucleus.lowercase()
             }
         }
@@ -864,13 +866,12 @@ compileRawInto(raw, vietnamese, out, raw.length)
 
     /** Scans the maximal base-vowel run at the start of [remainingAfterOnset]:
      *  returns (nucleus, remainingAfterNucleus). */
-    private fun scanNucleusAndRemainder(remainingAfterOnset: String): Pair<String, String> {
-        val sb = StringBuilder()
+    private fun scanNucleusEnd(remainingAfterOnset: String): Int {
         var i = 0
         while (i < remainingAfterOnset.length && RimeMap.isBaseVowel(remainingAfterOnset[i])) {
-            sb.append(remainingAfterOnset[i]); i++
+            i++
         }
-        return sb.toString() to remainingAfterOnset.substring(i)
+        return i
     }
 
     /** Canonical raw onset with `đ` folded by casing (Đ→DD, Đx→Dd, else dd). */
@@ -878,7 +879,7 @@ compileRawInto(raw, vietnamese, out, raw.length)
     /**
      * [adoptWord] + round-trip gate in one call — null when not adoptable.
      * (Refactor note: composing-state refresh, nucleus scan, and `đ` onset
-     * folding are each shared by one helper — see scanNucleusAndRemainder and
+     * folding are each shared by one helper — see scanNucleusEnd and
      * canonicalOnsetFold above.)
      */
     fun adoptRoundTrip(display: String): String? =
