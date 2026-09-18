@@ -4,7 +4,7 @@ package com.goviet.keyboard.engine
  * OnsetMap — zero-computation flat map for Vietnamese onset validation.
  *
  * Same architecture as [RimeMap]: 5-bit character encoding, Fibonacci-hash
- * table, O(1) lookup. Replaces ONSETS array + ONSET_LETTERS + isValidOnset().
+ * table, O(1) lookup. Replaces the ONSETS array + ONSET_LETTERS onset tables.
  */
 object OnsetMap {
 
@@ -81,9 +81,12 @@ object OnsetMap {
     private fun foldCode(pos: Int, to: Char): Int =
         (pos and 7) or (charIndex(to) shl 3)
 
-    /** Valid onset or prefix of one (for composition: 't' passes because 'th'/'tr' exist). */
-    fun isValidOnset(onset: CharSequence, start: Int = 0, length: Int = onset.length - start): Boolean =
-        length == 0 || isCompleteOnset(onset, start, length)
+    /** Canonical raw onset with `đ` folded by casing (top-level → resolves from any scope). */
+    @JvmStatic
+    fun rawKeyForOnset(onset: String): String = when (onset.lowercase()) {
+        "đ" -> if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd"
+        else -> onset
+    }
 
     /** Longest complete onset prefix of [cs] starting at [start]; 0 when none. */
     @JvmStatic
@@ -96,8 +99,7 @@ object OnsetMap {
     }
 
     private val CONSONANT_BOOL = BooleanArray(512).also { arr ->
-        for (o in ALL_ONSETS) if (o.length == 1) arr[o[0].lowercaseChar().code] = true
-        for (o in ALL_ONSETS) if (o.length > 1) arr[o[0].lowercaseChar().code] = true
+        for (o in ALL_ONSETS) arr[o[0].lowercaseChar().code] = true
         arr['q'.lowercaseChar().code] = true
     }
 

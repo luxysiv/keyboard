@@ -273,7 +273,7 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
         val maxOnset = minOf(3, len)
         var onsetEnd = 0
         for (onsetLen in maxOnset downTo 1) {
-            if (OnsetMap.isValidOnset(raw, 0, onsetLen)) {
+            if (OnsetMap.isCompleteOnset(raw, 0, onsetLen)) {
                 if (onsetLen == 1 && RimeMap.isBaseVowel(raw[0])) continue
                 if (!options.directW && onsetLen == 1 && raw[0].lowercaseChar() == 'w') continue
                 if (onsetLen > 1 && RimeMap.isGiOnset(raw, 0, onsetLen)) {
@@ -806,8 +806,8 @@ compileRawInto(raw, vietnamese, out, raw.length)
             for (cand in RimeMap.CODAS) {
                 if (remLower.startsWith(cand)) {
                     val candidateRime = nucleus.lowercase() + cand
-                    if (RimeMap.isValidPrefix(RimeMap.rimeKey(candidateRime)) &&
-                        RimeMap.isRimeValidForTone(candidateRime.lowercase(), detectedTone)) {
+                    val candidateRimeKey = RimeMap.rimeKey(candidateRime.lowercase())
+                    if (RimeMap.isRimeKeyValidForTone(candidateRimeKey, detectedTone)) {
                         coda = remainingAfterNucleus.substring(0, cand.length)
                         rawSuffix = remainingAfterNucleus.substring(cand.length)
                         matchedCoda = true; break
@@ -819,21 +819,22 @@ compileRawInto(raw, vietnamese, out, raw.length)
             rawSuffix = remainingAfterNucleus
         }
 
-        val hasValidRime = nucleus.isNotEmpty() && RimeMap.isValidPrefix(RimeMap.rimeKey(nucleus.lowercase() + coda.lowercase()))
+        val rimeKey = nucleus.lowercase() + coda.lowercase()
+        val rimeKeyFull = if (rimeKey.isEmpty()) 0 else RimeMap.rimeKey(rimeKey)
+        val hasValidRime = nucleus.isNotEmpty() && RimeMap.isValidPrefix(rimeKeyFull)
         val validTone = if (hasValidRime) detectedTone else Tone.NONE
         val validSuffix = if (hasValidRime) rawSuffix else (if (detectedTone != Tone.NONE) word.substring(onset.length) else rawSuffix)
 
-        val rimeKey = nucleus.lowercase() + coda.lowercase()
         val isValidRimeOrPrefix = if (nucleus.isEmpty()) {
             onset.isNotEmpty() && coda.isEmpty()
         } else {
-            RimeMap.isValidPrefix(RimeMap.rimeKey(rimeKey)) && RimeMap.isRimeValidForTone(rimeKey, validTone)
+            RimeMap.isRimeKeyValidForTone(rimeKeyFull, validTone)
         }
         val isValid = validSuffix.isEmpty() && isValidRimeOrPrefix
 
         val canonicalRaw = if (isValid) {
             val sb = StringBuilder()
-            sb.append(canonicalOnsetFoldTopLevel(onset))
+            sb.append(OnsetMap.rawKeyForOnset(onset))
             sb.append(nucleusToRaw(nucleus))
             val nucAllUpper = nucleus.isNotEmpty() && nucleus.all { it.isUpperCase() }
             sb.append(coda)
@@ -954,7 +955,7 @@ compileRawInto(raw, vietnamese, out, raw.length)
             if (foldedCount != 1) return null
 
             val sb = StringBuilder()
-            sb.append(canonicalOnsetFoldTopLevel(onset))
+            sb.append(OnsetMap.rawKeyForOnset(onset))
             sb.append(plain)
             sb.append(coda)
             sb.append(fk)
@@ -1036,8 +1037,3 @@ compileRawInto(raw, vietnamese, out, raw.length)
     }
 }
 
-/** Canonical raw onset with `đ` folded by casing (top-level → resolves from any scope). */
-internal fun canonicalOnsetFoldTopLevel(onset: String): String = when (onset.lowercase()) {
-    "đ" -> if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd"
-    else -> onset
-}
