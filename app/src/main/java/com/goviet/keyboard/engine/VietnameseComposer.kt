@@ -831,7 +831,7 @@ compileRawInto(raw, vietnamese, out, raw.length)
 
         val canonicalRaw = if (isValid) {
             val sb = StringBuilder()
-            sb.append(canonicalOnsetRaw(onset))
+            sb.append(canonicalOnsetFoldTopLevel(onset))
             sb.append(nucleusToRaw(nucleus))
             val nucAllUpper = nucleus.isNotEmpty() && nucleus.all { it.isUpperCase() }
             sb.append(coda)
@@ -874,16 +874,12 @@ compileRawInto(raw, vietnamese, out, raw.length)
     }
 
     /** Canonical raw onset with `đ` folded by casing (Đ→DD, Đx→Dd, else dd). */
-    private fun canonicalOnsetRaw(onset: String): String = when (onset.lowercase()) {
-        "đ" -> if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd"
-        else -> onset
-    }
 
     /**
      * [adoptWord] + round-trip gate in one call — null when not adoptable.
      * (Refactor note: composing-state refresh, nucleus scan, and `đ` onset
      * folding are each shared by one helper — see scanNucleusAndRemainder and
-     * canonicalOnsetRaw above.)
+     * canonicalOnsetFold above.)
      */
     fun adoptRoundTrip(display: String): String? =
         canonicalRawIfRoundTrips(adoptWord(display), display)
@@ -957,7 +953,7 @@ compileRawInto(raw, vietnamese, out, raw.length)
             if (foldedCount != 1) return null
 
             val sb = StringBuilder()
-            sb.append(canonicalOnsetRaw(onset))
+            sb.append(canonicalOnsetFoldTopLevel(onset))
             sb.append(plain)
             sb.append(coda)
             sb.append(fk)
@@ -1037,4 +1033,10 @@ compileRawInto(raw, vietnamese, out, raw.length)
         options.oldTonePlacement = config.oldTonePlacement
         autoCapitalize = config.autoCapitalize
     }
+}
+
+/** Canonical raw onset with `đ` folded by casing (top-level → resolves from any scope). */
+internal fun canonicalOnsetFoldTopLevel(onset: String): String = when (onset.lowercase()) {
+    "đ" -> if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd"
+    else -> onset
 }
