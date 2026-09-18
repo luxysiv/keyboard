@@ -36,6 +36,17 @@ object VietnameseUnicode {
         }
     }
 
+    /** Tone index 1..5 (0 = untoneable) keyed by a toned letter's code;
+     *  O(1) inverse of [applyTone].  Uppercase toned letters map the same. */
+    private val TONE_INDEX = ByteArray(TABLE_LIMIT) { 0 }.apply {
+        for (row in TONE_ROWS) {
+            for (t in 1 until row.length) {
+                this[row[t].code] = t.toByte()
+                this[row[t].uppercaseChar().code] = t.toByte()
+            }
+        }
+    }
+
     /** [TONED] / [TONED_UPPER] index = row * [TONE_COUNT] + tone.index. */
     private val TONED = buildToneTable(upper = false)
     private val TONED_UPPER = buildToneTable(upper = true)
@@ -62,33 +73,33 @@ object VietnameseUnicode {
         return if (code < TABLE_LIMIT) STRIP_TONE[code] else char
     }
 
-    fun stripDiacritics(char: Char): Char {
-        return when (stripTone(char)) {
-            'ă', 'â' -> 'a'
-            'Ă', 'Â' -> 'A'
-            'ê' -> 'e'
-            'Ê' -> 'E'
-            'ô', 'ơ' -> 'o'
-            'Ô', 'Ơ' -> 'O'
-            'ư' -> 'u'
-            'Ư' -> 'U'
-            'đ' -> 'd'
-            'Đ' -> 'D'
-            else -> stripTone(char)
-        }
+    /** Strips the shape diacritic (breve / circumflex / horn / stroke)
+     *  off a *plain* base letter, keeping case; identity otherwise.
+     *  Excludes tone, so compose with [stripTone].  Single source for
+     *  [stripDiacritics] and [RimeMap.plainOf]. */
+    fun stripShape(char: Char): Char = when (char) {
+        'ă', 'â' -> 'a'
+        'Ă', 'Â' -> 'A'
+        'ê' -> 'e'
+        'Ê' -> 'E'
+        'ô', 'ơ' -> 'o'
+        'Ô', 'Ơ' -> 'O'
+        'ư' -> 'u'
+        'Ư' -> 'U'
+        'đ' -> 'd'
+        'Đ' -> 'D'
+        else -> char
     }
+
+    fun stripDiacritics(char: Char): Char = stripShape(stripTone(char))
 
     /**
      * Inverse of [applyTone] — the tone that produced [char], or NONE when the
      * char carries no tone.  Single source: the [applyTone] table.
      */
     fun toneOf(char: Char): Tone {
-        val base = stripTone(char)
-        if (base == char) return Tone.NONE
-        for (t in Tone.values()) {
-            if (t != Tone.NONE && applyTone(base, t) == char) return t
-        }
-        return Tone.NONE
+        val code = char.code
+        return if (code < TABLE_LIMIT) Tone.fromInt(TONE_INDEX[code].toInt()) else Tone.NONE
     }
 
     fun stripToneFromWord(word: String): String {
@@ -122,7 +133,7 @@ object VietnameseUnicode {
     }
 
     fun getBaseChar(c: Char): Char {
-        return stripDiacritics(stripTone(c)).lowercaseChar()
+        return stripDiacritics(c).lowercaseChar()
     }
 
     fun applyCasingFromRaw(compiled: CharSequence, raw: CharSequence): String {

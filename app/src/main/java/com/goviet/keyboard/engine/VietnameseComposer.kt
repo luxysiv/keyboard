@@ -941,14 +941,15 @@ compileRawInto(raw, vietnamese, out, raw.length)
             var foldKey: Char? = null
             var foldedCount = 0
             for (ch in nucleus) {
-                when (ch.lowercaseChar()) {
-                    'â' -> { plain.append('a'); foldKey = foldKey ?: 'a'; foldedCount++ }
-                    'ê' -> { plain.append('e'); foldKey = foldKey ?: 'e'; foldedCount++ }
-                    'ô' -> { plain.append('o'); foldKey = foldKey ?: 'o'; foldedCount++ }
-                    'ă' -> { plain.append('a'); foldKey = foldKey ?: 'w'; foldedCount++ }
-                    'ơ' -> { plain.append('o'); foldKey = foldKey ?: 'w'; foldedCount++ }
-                    'ư' -> { plain.append('u'); foldKey = foldKey ?: 'w'; foldedCount++ }
-                    else -> plain.append(ch)
+                val lc = ch.lowercaseChar()
+                val pc = RimeMap.plainOf(lc)
+                val fk = RimeMap.foldKeyFor(ch)
+                if (pc != lc && fk != null) {
+                    plain.append(pc)
+                    foldedCount++
+                    if (foldKey == null) foldKey = fk
+                } else {
+                    plain.append(ch)
                 }
             }
             val fk = foldKey ?: return null

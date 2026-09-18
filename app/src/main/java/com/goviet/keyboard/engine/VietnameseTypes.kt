@@ -22,6 +22,16 @@ enum class Tone(val index: Int, val key: Char?) {
             'z' -> NONE
             else -> null
         }
+
+        /** [Tone] by [Tone.index]; [Tone.NONE] for an unknown index. */
+        fun fromInt(index: Int): Tone = when (index) {
+            1 -> ACUTE
+            2 -> GRAVE
+            3 -> HOOK
+            4 -> TILDE
+            5 -> DOT
+            else -> NONE
+        }
     }
 }
 

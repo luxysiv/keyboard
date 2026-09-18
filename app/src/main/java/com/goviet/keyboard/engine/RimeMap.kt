@@ -613,11 +613,20 @@ object RimeMap {
         return code in 0 until 512 && VOWEL_MOD_SET[code]
     }
 
-    /** Plain letter that a folded display letter unfolds back to. */
+    /** Plain letter that a folded display letter unfolds back to — casing
+     *  preserved, single source [VietnameseUnicode.stripShape]. */
     @JvmStatic
-    fun plainOf(folded: Char): Char = when (folded) {
-        'ê' -> 'e'; 'ô' -> 'o'; 'ơ' -> 'o'; 'â' -> 'a'; 'ă' -> 'a'; 'ư' -> 'u'; 'đ' -> 'd'
-        else -> folded
+    fun plainOf(folded: Char): Char = VietnameseUnicode.stripShape(folded)
+
+    /** Telex fold key that folds a plain letter into [folded]; null for a
+     *  non-folded display letter.  'a'/'e'/'o' = circumflex keys, 'w' = ă/ơ/ư. */
+    @JvmStatic
+    fun foldKeyFor(folded: Char): Char? = when (folded.lowercaseChar()) {
+        'â' -> 'a'
+        'ê' -> 'e'
+        'ô' -> 'o'
+        'ă', 'ơ', 'ư' -> 'w'
+        else -> null
     }
 
     /** True if the rime is a valid stop-coda rime (c, ch, p, t). */
