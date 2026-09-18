@@ -675,26 +675,26 @@ class VietnameseComposer(var options: EngineOptions = EngineOptions()) {
      * When [composeAsVietnamese] is false the text is kept verbatim (word-edit literal
      * lock); otherwise it is resegmented through the Telex kernel.
      */
-    fun setComposingRaw(raw: CharSequence) {
-        processRaw.setLength(0)
-        processRaw.append(raw)
-        if (composeAsVietnamese) {
-            resegment(processRaw, processState)
-        } else {
-            processState.reset()
-            processState.rawSuffix = raw.toString()
-        }
-    }
-
-    /** Inserts one Telex key at [index] of the composing raw and resegments. */
-    fun insertComposingKey(index: Int, key: Char) {
-        if (index >= processRaw.length) processRaw.append(key) else processRaw.insert(index, key)
+    /** Refresh composing state after a raw-buffer mutation (resegment if Vietnamese). */
+    private fun refreshProcessState() {
         if (composeAsVietnamese) {
             resegment(processRaw, processState)
         } else {
             processState.reset()
             processState.rawSuffix = processRaw.toString()
         }
+    }
+
+    fun setComposingRaw(raw: CharSequence) {
+        processRaw.setLength(0)
+        processRaw.append(raw)
+        refreshProcessState()
+    }
+
+    /** Inserts one Telex key at [index] of the composing raw and resegments. */
+    fun insertComposingKey(index: Int, key: Char) {
+        if (index >= processRaw.length) processRaw.append(key) else processRaw.insert(index, key)
+        refreshProcessState()
     }
 
     fun processKey(key: Char): CompositionResult {
@@ -782,13 +782,7 @@ compileRawInto(raw, vietnamese, out, raw.length)
         var onset = if (onsetLen > 0) baseWord.substring(0, onsetLen) else ""
         var remainingAfterOnset = baseWord.substring(onsetLen)
 
-        val nucleusSb = StringBuilder()
-        var remIdx = 0
-        while (remIdx < remainingAfterOnset.length && RimeMap.isBaseVowel(remainingAfterOnset[remIdx])) {
-            nucleusSb.append(remainingAfterOnset[remIdx]); remIdx++
-        }
-        var nucleus = nucleusSb.toString()
-        var remainingAfterNucleus = remainingAfterOnset.substring(remIdx)
+        var (nucleus, remainingAfterNucleus) = scanNucleusAndRemainder(remainingAfterOnset)
         var remLower = remainingAfterNucleus.lowercase()
 
         if (nucleus.isEmpty() && RimeMap.isGiOnset(onset)) {
@@ -796,13 +790,9 @@ compileRawInto(raw, vietnamese, out, raw.length)
             if (OnsetMap.isCompleteOnset(shorterOnset.lowercase(), 0, shorterOnset.length)) {
                 onset = shorterOnset
                 remainingAfterOnset = baseWord.substring(onset.length)
-                val nsb = StringBuilder()
-                var ri = 0
-                while (ri < remainingAfterOnset.length && RimeMap.isBaseVowel(remainingAfterOnset[ri])) {
-                    nsb.append(remainingAfterOnset[ri]); ri++
-                }
-                nucleus = nsb.toString()
-                remainingAfterNucleus = remainingAfterOnset.substring(ri)
+                val (nuc, remAfterNuc) = scanNucleusAndRemainder(remainingAfterOnset)
+                nucleus = nuc
+                remainingAfterNucleus = remAfterNuc
                 remLower = remainingAfterNucleus.lowercase()
             }
         }
@@ -841,10 +831,7 @@ compileRawInto(raw, vietnamese, out, raw.length)
 
         val canonicalRaw = if (isValid) {
             val sb = StringBuilder()
-            when (onset.lowercase()) {
-                "đ" -> sb.append(if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd")
-                else -> sb.append(onset)
-            }
+            sb.append(canonicalOnsetRaw(onset))
             sb.append(nucleusToRaw(nucleus))
             val nucAllUpper = nucleus.isNotEmpty() && nucleus.all { it.isUpperCase() }
             sb.append(coda)
@@ -873,6 +860,23 @@ compileRawInto(raw, vietnamese, out, raw.length)
         }
         val canonical = adopt.canonicalRaw
         return if (process(canonical) == display) canonical else null
+    }
+
+    /** Scans the maximal base-vowel run at the start of [remainingAfterOnset]:
+     *  returns (nucleus, remainingAfterNucleus). */
+    private fun scanNucleusAndRemainder(remainingAfterOnset: String): Pair<String, String> {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < remainingAfterOnset.length && RimeMap.isBaseVowel(remainingAfterOnset[i])) {
+            sb.append(remainingAfterOnset[i]); i++
+        }
+        return sb.toString() to remainingAfterOnset.substring(i)
+    }
+
+    /** Canonical raw onset with `đ` folded by casing (Đ→DD, Đx→Dd, else dd). */
+    private fun canonicalOnsetRaw(onset: String): String = when (onset.lowercase()) {
+        "đ" -> if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd"
+        else -> onset
     }
 
     /** [adoptWord] + round-trip gate in one call — null when not adoptable. */
@@ -948,10 +952,7 @@ compileRawInto(raw, vietnamese, out, raw.length)
             if (foldedCount != 1) return null
 
             val sb = StringBuilder()
-            when (onset.lowercase()) {
-                "đ" -> sb.append(if (onset == "Đ") "DD" else if (onset[0].isUpperCase()) "Dd" else "dd")
-                else -> sb.append(onset)
-            }
+            sb.append(canonicalOnsetRaw(onset))
             sb.append(plain)
             sb.append(coda)
             sb.append(fk)

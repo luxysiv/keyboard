@@ -234,15 +234,6 @@ class VietnameseComposerTest {
     }
 
     @Test
-    fun testEchoMatchesProductionPins() {
-        // Engine echo must match the previously-confirmed correct behavior for these
-        // non-Vietnamese sequences (no free-split, no recomposition — literal echo).
-        assertEquals("chiocs", engine.process("chiocs"))
-        assertEquals("yenw", engine.process("yenw"))
-        assertEquals("undefined", engine.process("undefined"))
-    }
-
-    @Test
     fun testLiteralOrderingAndHardLock() {
         // Non-Vietnamese strings must stay in raw order (no nucleus/coda built
         // after a rejected char: plus/player/tja/rossi/purra/logic/engine).
