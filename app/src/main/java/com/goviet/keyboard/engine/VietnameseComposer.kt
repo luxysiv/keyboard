@@ -879,7 +879,12 @@ compileRawInto(raw, vietnamese, out, raw.length)
         else -> onset
     }
 
-    /** [adoptWord] + round-trip gate in one call — null when not adoptable. */
+    /**
+     * [adoptWord] + round-trip gate in one call — null when not adoptable.
+     * (Refactor note: composing-state refresh, nucleus scan, and `đ` onset
+     * folding are each shared by one helper — see scanNucleusAndRemainder and
+     * canonicalOnsetRaw above.)
+     */
     fun adoptRoundTrip(display: String): String? =
         canonicalRawIfRoundTrips(adoptWord(display), display)
 
